@@ -1,0 +1,31 @@
+﻿# Dependencias
+node_modules/
+
+# Archivos de entorno y configuración sensible
+.env
+.env.local
+.env.*.local
+
+# Perfiles temporales de navegadores (Puppeteer / Chrome)
+.chrome_profile/
+.chrome_soat_profile/
+.chrome_sunarp_profile/
+
+# Temporales de audio y captchas
+temp_audio/
+*.mp3
+*.wav
+
+# Base de datos local dinamica
+data/vehicles.json
+data/*.json
+
+# Logs y depuracion
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db

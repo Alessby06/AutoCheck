@@ -1,0 +1,1743 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AutoCheck Perú | Auditoría y Reporte Vehicular por Placa</title>
+  <meta name="description" content="Plataforma de consulta vehicular integral por placa para compra segura de autos de segunda mano en Perú.">
+  <!-- Tipografía Oficial Google Sans -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@6..144,1..1000&family=Google+Sans:ital,opsz,wght@0,17..18,400..700;1,17..18,400..700&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      /* Paleta Solicitada */
+      --color-terracotta: #dd6e42;
+      --color-terracotta-hover: #c75c32;
+      --color-terracotta-glow: rgba(221, 110, 66, 0.22);
+      
+      --color-sand: #e8dab2;
+      --color-sand-soft: rgba(232, 218, 178, 0.25);
+      --color-sand-border: rgba(232, 218, 178, 0.45);
+      
+      --color-slate: #4f6d7a;
+      --color-slate-deep: #21323a;
+      --color-slate-soft: rgba(79, 109, 122, 0.15);
+      
+      --color-powder: #c0d6df;
+      --color-powder-soft: rgba(192, 214, 223, 0.25);
+      
+      --color-platinum: #eaeaea;
+
+      /* Estado Semáforo */
+      --emerald: #10b981;
+      --emerald-glow: rgba(16, 185, 129, 0.18);
+      --amber: #f59e0b;
+      --amber-glow: rgba(245, 158, 11, 0.18);
+      --rose: #f43f5e;
+      --rose-glow: rgba(244, 63, 94, 0.18);
+      
+      /* Modo Claro (Por Defecto o data-theme="light") */
+      --bg-canvas: #f4f6f8;
+      --bg-canvas-subtle: #eaeaea;
+      --bg-surface: #ffffff;
+      --bg-surface-card: #ffffff;
+      --bg-surface-elevated: #f8fafc;
+      --bg-inner-box: rgba(192, 214, 223, 0.18);
+      
+      --border-subtle: rgba(79, 109, 122, 0.18);
+      --border-hover: rgba(79, 109, 122, 0.38);
+      --border-focus: var(--color-terracotta);
+      
+      --text-primary: #1e2930;
+      --text-secondary: #4f6d7a;
+      --text-muted: #6b828d;
+      
+      --input-bg: #ffffff;
+      --input-border: rgba(79, 109, 122, 0.28);
+      
+      --shadow-ambient: 0 16px 40px rgba(79, 109, 122, 0.09);
+      --shadow-card: 0 8px 24px rgba(79, 109, 122, 0.08);
+      --ambient-gradient: radial-gradient(ellipse at top, rgba(221, 110, 66, 0.12) 0%, rgba(244, 246, 248, 0) 70%);
+      
+      --toggle-bg: rgba(79, 109, 122, 0.12);
+      --toggle-border: rgba(79, 109, 122, 0.25);
+      --toggle-text: #21323a;
+    }
+
+    /* Modo Noche / Obsidian Puro (Regla Global Antigravity) */
+    [data-theme="dark"] {
+      --bg-canvas: #000000;
+      --bg-canvas-subtle: #050505;
+      --bg-surface: rgba(14, 16, 20, 0.88);
+      --bg-surface-card: rgba(18, 20, 26, 0.94);
+      --bg-surface-elevated: rgba(26, 29, 38, 0.96);
+      --bg-inner-box: rgba(0, 0, 0, 0.55);
+      
+      --border-subtle: rgba(192, 214, 223, 0.12);
+      --border-hover: rgba(192, 214, 223, 0.28);
+      --border-focus: var(--color-terracotta);
+      
+      --text-primary: #f9fafb;
+      --text-secondary: #c0d6df;
+      --text-muted: #859aa5;
+      
+      --input-bg: #050505;
+      --input-border: rgba(192, 214, 223, 0.20);
+      
+      --shadow-ambient: 0 20px 50px rgba(0, 0, 0, 0.85);
+      --shadow-card: 0 10px 30px rgba(0, 0, 0, 0.65);
+      --ambient-gradient: radial-gradient(ellipse at top, rgba(221, 110, 66, 0.18) 0%, rgba(0, 0, 0, 0) 70%);
+      
+      --toggle-bg: rgba(255, 255, 255, 0.08);
+      --toggle-border: rgba(255, 255, 255, 0.16);
+      --toggle-text: #f9fafb;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Google Sans Flex', 'Google Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    /* Stack Monoespaciado Nativo del Sistema (Prohibido JetBrains Mono) */
+    .mono-font, .code-text, .plate-text, .input-plate, .cooldown-clock-badge {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+    }
+
+    body {
+      background-color: var(--bg-canvas);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 1.5rem 1rem 4rem;
+      overflow-x: hidden;
+      transition: background-color 0.3s ease, color 0.3s ease;
+    }
+
+    .app-container {
+      width: 100%;
+      max-width: 980px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .ambient-glow {
+      position: fixed;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 850px;
+      height: 420px;
+      background: var(--ambient-gradient);
+      pointer-events: none;
+      z-index: 0;
+      transition: background 0.3s ease;
+    }
+
+    /* Barra Superior de Herramientas (Theme Switcher) */
+    .top-toolbar {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      margin-bottom: 1.25rem;
+    }
+
+    .theme-toggle-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.45rem 0.95rem;
+      border-radius: 9999px;
+      background: var(--toggle-bg);
+      border: 1px solid var(--toggle-border);
+      color: var(--toggle-text);
+      font-size: 0.85rem;
+      font-weight: 700;
+      cursor: pointer;
+      backdrop-filter: blur(10px);
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .theme-toggle-btn:hover {
+      border-color: var(--color-terracotta);
+      color: var(--color-terracotta);
+      transform: translateY(-1px);
+    }
+
+    /* Header */
+    header {
+      position: relative;
+      z-index: 1;
+      text-align: center;
+      margin-bottom: 2.25rem;
+    }
+
+    .badge-live {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.4rem 1rem;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      background: var(--color-sand-soft);
+      border: 1px solid var(--color-sand-border);
+      color: var(--color-slate-deep);
+      margin-bottom: 1rem;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      box-shadow: 0 2px 10px rgba(221, 110, 66, 0.08);
+    }
+
+    [data-theme="dark"] .badge-live {
+      color: var(--color-sand);
+      background: rgba(232, 218, 178, 0.12);
+      border-color: rgba(232, 218, 178, 0.3);
+    }
+
+    .pulse-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background-color: var(--color-terracotta);
+      box-shadow: 0 0 10px var(--color-terracotta);
+      animation: pulse 1.8s infinite;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(0.95); opacity: 0.7; }
+      50% { transform: scale(1.3); opacity: 1; }
+      100% { transform: scale(0.95); opacity: 0.7; }
+    }
+
+    h1 {
+      font-size: 2.6rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 0.5rem;
+      color: var(--text-primary);
+    }
+
+    h1 span {
+      color: var(--color-terracotta);
+    }
+
+    p.tagline {
+      color: var(--text-secondary);
+      font-size: 1.05rem;
+      max-width: 640px;
+      margin: 0 auto;
+      line-height: 1.5;
+    }
+
+    /* Buscador */
+    .search-card {
+      position: relative;
+      z-index: 1;
+      background: var(--bg-surface);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border-subtle);
+      border-radius: 20px;
+      padding: 1.75rem;
+      box-shadow: var(--shadow-ambient);
+      margin-bottom: 2rem;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .form-group {
+      display: flex;
+      gap: 0.85rem;
+      flex-wrap: wrap;
+    }
+
+    .plate-input-wrapper {
+      flex: 1;
+      min-width: 220px;
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .flag-label {
+      position: absolute;
+      left: 1.1rem;
+      font-size: 0.8rem;
+      font-weight: 800;
+      color: var(--text-muted);
+      letter-spacing: 0.08em;
+      pointer-events: none;
+    }
+
+    .input-plate {
+      width: 100%;
+      background: var(--input-bg);
+      border: 1.5px solid var(--input-border);
+      border-radius: 14px;
+      padding: 0.95rem 1rem 0.95rem 5.3rem;
+      color: var(--text-primary);
+      font-size: 1.35rem;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      outline: none;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .input-plate:focus {
+      border-color: var(--color-terracotta);
+      box-shadow: 0 0 0 4px var(--color-terracotta-glow);
+    }
+
+    .btn-submit {
+      background: var(--color-terracotta);
+      color: #ffffff;
+      border: none;
+      border-radius: 14px;
+      padding: 0.95rem 2rem;
+      font-size: 1.05rem;
+      font-weight: 800;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 16px var(--color-terracotta-glow);
+    }
+
+    .btn-submit:hover {
+      background: var(--color-terracotta-hover);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(221, 110, 66, 0.4);
+    }
+
+    .btn-submit:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .quick-tags {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-top: 1.25rem;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      flex-wrap: wrap;
+    }
+
+    .tag-btn {
+      background: var(--bg-inner-box);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
+      padding: 0.3rem 0.75rem;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      transition: all 0.15s ease;
+    }
+
+    .tag-btn:hover {
+      border-color: var(--color-terracotta);
+      color: var(--color-terracotta);
+      background: rgba(221, 110, 66, 0.08);
+    }
+
+    /* Estado de Carga */
+    .loading-state {
+      display: none;
+      text-align: center;
+      padding: 3.5rem 1.5rem;
+      background: var(--bg-surface);
+      border-radius: 20px;
+      border: 1px solid var(--border-subtle);
+      margin-bottom: 2rem;
+      box-shadow: var(--shadow-card);
+    }
+
+    .spinner {
+      width: 48px;
+      height: 48px;
+      border: 4px solid var(--color-powder-soft);
+      border-top-color: var(--color-terracotta);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 1.5rem;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Contenedor del Reporte */
+    .report-container {
+      display: none;
+      flex-direction: column;
+      gap: 1.75rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    .summary-hero {
+      background: var(--bg-surface-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 20px;
+      padding: 1.75rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1.25rem;
+      box-shadow: var(--shadow-card);
+    }
+
+    .plate-badge {
+      font-size: 2.2rem;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      color: var(--text-primary);
+    }
+
+    .risk-pill {
+      padding: 0.5rem 1.25rem;
+      border-radius: 9999px;
+      font-size: 0.9rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .risk-low {
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid var(--emerald);
+      color: var(--emerald);
+    }
+
+    .risk-medium {
+      background: rgba(245, 158, 11, 0.15);
+      border: 1px solid var(--amber);
+      color: var(--amber);
+    }
+
+    .risk-critical {
+      background: rgba(244, 63, 94, 0.15);
+      border: 1px solid var(--rose);
+      color: var(--rose);
+    }
+
+    .alerts-container {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .alert-card {
+      padding: 1rem 1.25rem;
+      border-radius: 14px;
+      font-size: 0.92rem;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+    }
+
+    .alert-card.CRITICAL {
+      background: rgba(244, 63, 94, 0.12);
+      border: 1px solid rgba(244, 63, 94, 0.4);
+      color: #f43f5e;
+    }
+
+    .alert-card.HIGH, .alert-card.WARNING {
+      background: rgba(245, 158, 11, 0.12);
+      border: 1px solid rgba(245, 158, 11, 0.4);
+      color: #d97706;
+    }
+
+    [data-theme="dark"] .alert-card.CRITICAL { color: #fecdd3; }
+    [data-theme="dark"] .alert-card.HIGH, [data-theme="dark"] .alert-card.WARNING { color: #fde68a; }
+
+    /* Grilla de Tarjetas Responsive */
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+      gap: 1.5rem;
+    }
+
+    .data-card {
+      background: var(--bg-surface-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 18px;
+      padding: 1.5rem;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-shadow: var(--shadow-card);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .data-card:hover {
+      border-color: var(--border-hover);
+    }
+
+    .data-card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: var(--color-terracotta);
+    }
+
+    .data-card.warn::before { background: var(--amber); }
+    .data-card.danger::before { background: var(--rose); }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.25rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .card-title {
+      font-size: 1.12rem;
+      font-weight: 800;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .source-badge {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--color-slate);
+      background: var(--color-powder-soft);
+      padding: 0.25rem 0.65rem;
+      border-radius: 6px;
+      border: 1px solid var(--border-subtle);
+      letter-spacing: 0.03em;
+    }
+
+    [data-theme="dark"] .source-badge {
+      color: var(--color-sand);
+      background: rgba(232, 218, 178, 0.12);
+      border-color: rgba(232, 218, 178, 0.2);
+    }
+
+    .data-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+      flex: 1;
+    }
+
+    .data-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      font-size: 0.92rem;
+      gap: 0.75rem;
+    }
+
+    .item-label {
+      color: var(--text-secondary);
+      flex-shrink: 0;
+      font-weight: 500;
+    }
+
+    .item-value {
+      font-weight: 700;
+      color: var(--text-primary);
+      text-align: right;
+      word-break: break-word;
+    }
+
+    .item-value.highlight-terracotta { color: var(--color-terracotta); }
+    .item-value.highlight-emerald { color: var(--emerald); }
+    .item-value.highlight-amber { color: var(--amber); }
+    .item-value.highlight-rose { color: var(--rose); }
+
+    /* MTC Deep Card Styles */
+    .mtc-highlight-box {
+      background: var(--bg-inner-box);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 1rem;
+      margin-top: 0.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .mtc-history-btn {
+      background: var(--bg-inner-box);
+      border: 1px solid var(--border-subtle);
+      color: var(--color-slate-deep);
+      padding: 0.65rem 1rem;
+      border-radius: 10px;
+      font-size: 0.88rem;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      transition: all 0.2s ease;
+      width: 100%;
+    }
+
+    [data-theme="dark"] .mtc-history-btn {
+      color: var(--color-powder);
+    }
+
+    .mtc-history-btn:hover {
+      background: var(--color-sand-soft);
+      border-color: var(--color-terracotta);
+      color: var(--color-terracotta);
+    }
+
+    /* Tabla Histórica de Inspecciones & Papeletas */
+    .history-table-container {
+      margin-top: 1rem;
+      overflow-x: auto;
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      background: var(--bg-surface);
+    }
+
+    .history-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.84rem;
+      text-align: left;
+    }
+
+    .history-table th {
+      background: var(--bg-inner-box);
+      padding: 0.7rem 0.85rem;
+      color: var(--text-secondary);
+      font-weight: 800;
+      border-bottom: 1px solid var(--border-subtle);
+      letter-spacing: 0.04em;
+    }
+
+    .history-table td {
+      padding: 0.7rem 0.85rem;
+      border-bottom: 1px solid var(--border-subtle);
+      color: var(--text-primary);
+    }
+
+    .history-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .badge-tag {
+      display: inline-block;
+      padding: 0.2rem 0.5rem;
+      border-radius: 6px;
+      font-size: 0.74rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .badge-tag.approved {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--emerald);
+    }
+
+    .badge-tag.warn {
+      background: rgba(245, 158, 11, 0.15);
+      color: var(--amber);
+    }
+
+    .badge-tag.expired {
+      background: rgba(244, 63, 94, 0.15);
+      color: var(--rose);
+    }
+
+    /* Cooldown Banner */
+    .cooldown-banner {
+      background: rgba(245, 158, 11, 0.08);
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      border-radius: 14px;
+      padding: 1.25rem 1.5rem;
+      margin-top: 1.1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+    }
+
+    .cooldown-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+
+    .cooldown-title {
+      font-size: 0.95rem;
+      font-weight: 800;
+      color: var(--amber);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .cooldown-clock-badge {
+      font-size: 1.25rem;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      background: var(--bg-surface-elevated);
+      color: #d97706;
+      border: 1.5px solid rgba(245, 158, 11, 0.5);
+      padding: 0.35rem 0.85rem;
+      border-radius: 10px;
+    }
+
+    [data-theme="dark"] .cooldown-clock-badge {
+      background: #000000;
+      color: #fde68a;
+    }
+
+    .cooldown-desc {
+      font-size: 0.86rem;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    .cooldown-btn-retry {
+      align-self: flex-start;
+      background: var(--amber);
+      color: #000000;
+      border: none;
+      border-radius: 8px;
+      padding: 0.5rem 1.1rem;
+      font-size: 0.85rem;
+      font-weight: 800;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .cooldown-btn-retry:hover {
+      background: #d97706;
+      transform: translateY(-1px);
+    }
+
+    /* Checklist Section */
+    .checklist-card {
+      background: var(--bg-surface-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 20px;
+      padding: 1.75rem;
+      margin-top: 1rem;
+      box-shadow: var(--shadow-card);
+    }
+
+    .checklist-title {
+      font-size: 1.25rem;
+      font-weight: 800;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      color: var(--text-primary);
+    }
+
+    .checklist-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+      gap: 1rem;
+      margin-top: 1.25rem;
+    }
+
+    .checklist-item {
+      background: var(--bg-inner-box);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 1.1rem;
+    }
+
+    .chk-header {
+      font-weight: 800;
+      font-size: 0.95rem;
+      margin-bottom: 0.35rem;
+      color: var(--text-primary);
+    }
+
+    .chk-guide {
+      font-size: 0.86rem;
+      color: var(--text-secondary);
+      line-height: 1.4;
+      margin-bottom: 0.5rem;
+    }
+
+    .chk-risk {
+      font-size: 0.8rem;
+      color: var(--rose);
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+  <div class="ambient-glow" aria-hidden="true"></div>
+
+  <div class="app-container">
+    <div class="top-toolbar">
+      <button type="button" id="theme-toggle" class="theme-toggle-btn" aria-label="Cambiar tema">
+        <span id="theme-toggle-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg></span>
+        <span id="theme-toggle-text">Modo Claro</span>
+      </button>
+    </div>
+
+    <header>
+      <div class="badge-live">
+        <span class="pulse-dot"></span> Motor de Auditoría 100% Online • Tiempo Real
+      </div>
+      <h1>AutoCheck <span>Perú</span></h1>
+      <p class="tagline">Ingresa la placa vehicular para auditar en segundos el historial completo de revisiones técnicas, certificados, SOAT, papeletas y gas.</p>
+    </header>
+
+    <!-- Buscador -->
+    <div class="search-card">
+      <form id="vehicle-form" class="form-group">
+        <div class="plate-input-wrapper">
+          <span class="flag-label">PERÚ</span>
+          <input 
+            type="text" 
+            id="plate-input" 
+            class="input-plate" 
+            placeholder="C0A-653" 
+            maxlength="8" 
+            required 
+            autocomplete="off" 
+            spellcheck="false"
+          />
+        </div>
+        <button type="submit" id="btn-search" class="btn-submit">
+          <span>Auditar Auto</span>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        </button>
+      </form>
+
+      <div class="quick-tags">
+        <span>Placas de prueba:</span>
+        <span class="tag-btn" onclick="consult('C0A-653')">C0A-653</span>
+        <span class="tag-btn" onclick="consult('B3T-489')">B3T-489</span>
+        <span class="tag-btn" onclick="consult('A1A-100')">A1A-100</span>
+        <span class="tag-btn" onclick="consult('F4G-520')">F4G-520</span>
+      </div>
+    </div>
+
+    <!-- Estado de Carga -->
+    <div id="loading-box" class="loading-state">
+      <div class="spinner"></div>
+      <h2>Auditando en simultáneo en todas las entidades...</h2>
+      <p style="color: var(--text-secondary); margin-top: 0.5rem;">
+        Extrayendo certificados oficiales del MTC, SAT Lima, SUNARP, APESEG, INFOGAS, SUTRAN y Callao.
+      </p>
+    </div>
+
+    <!-- Contenedor del Reporte -->
+    <div id="report-view" class="report-container">
+      
+      <!-- Barra Resumen -->
+      <div class="summary-hero">
+        <div>
+          <span style="color: var(--text-muted); font-size: 0.8rem; text-transform: uppercase; font-weight: 700;">Vehículo Auditado</span>
+          <div id="hero-plate" class="plate-badge">---</div>
+          <span id="hero-meta" style="color: var(--text-secondary); font-size: 0.85rem;">Latencia: 0ms</span>
+        </div>
+        <div>
+          <span id="hero-risk" class="risk-pill risk-low">Seguro / Bajo Riesgo</span>
+        </div>
+      </div>
+
+      <!-- Contenedor de Alertas -->
+      <div id="alerts-box" class="alerts-container"></div>
+
+      <!-- Tarjetas de Información -->
+      <div class="cards-grid">
+        
+        <!-- Tarjeta MTC CITV ULTRA DETALLADA -->
+        <div class="data-card" id="card-mtc" style="grid-column: 1 / -1;">
+          <div class="card-header">
+            <span class="card-title">Inspección Técnica Vehicular (MTC - CITV Oficial)</span>
+            <span class="source-badge" id="mtc-badge-source">MTC Oficial</span>
+          </div>
+          
+          <div class="data-list">
+            <div class="data-item">
+              <span class="item-label">Estado de la Revisión:</span>
+              <span class="item-value" id="val-mtc-status">--</span>
+            </div>
+            <div class="data-item">
+              <span class="item-label">Vigente Desde / Hasta:</span>
+              <span class="item-value" id="val-mtc-dates">--</span>
+            </div>
+            <div class="data-item">
+              <span class="item-label">N° Certificado Oficial:</span>
+              <span class="item-value" id="val-mtc-cert" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; letter-spacing: 0.05em; color: var(--text-primary);">--</span>
+            </div>
+            <div class="data-item">
+              <span class="item-label">Empresa Certificadora:</span>
+              <span class="item-value" id="val-mtc-center">--</span>
+            </div>
+            <div class="data-item">
+              <span class="item-label">Dirección de la Planta MTC:</span>
+              <span class="item-value" id="val-mtc-address" style="font-size: 0.85rem; color: var(--text-secondary);">--</span>
+            </div>
+          </div>
+
+          <!-- Bloque Profesional de Cooldown en Vivo con Contador MM:SS -->
+          <div id="mtc-cooldown-box" class="cooldown-banner" style="display: none;">
+            <div class="cooldown-header">
+              <div class="cooldown-title">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                <span>Ventana de Regulación de Tráfico del Servidor MTC</span>
+              </div>
+              <div class="cooldown-clock-badge" id="cooldown-timer-display">00:00</div>
+            </div>
+            <div class="cooldown-desc" id="cooldown-desc-text">
+              El servidor oficial del Ministerio de Transportes y Comunicaciones (MTC) ha establecido un intervalo temporal de regulación por alta demanda de consultas simultáneas. La disponibilidad del portal se restablecerá de manera automática al concluir el tiempo estimado.
+            </div>
+            <button type="button" class="cooldown-btn-retry" id="btn-cooldown-retry" style="display: none;" onclick="retryAudit()">
+              <span>Reintentar Consulta Ahora</span>
+            </button>
+          </div>
+
+          <!-- Historial de Revisiones Anteriores Desplegable -->
+          <div id="mtc-history-wrapper" style="display: none; margin-top: 1rem;">
+            <button type="button" class="mtc-history-btn" id="btn-toggle-history" onclick="toggleHistory()">
+              <span>Ver Historial de Revisiones Anteriores (<span id="history-count">0</span> registradas)</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </button>
+
+            <div id="history-table-container" class="history-table-container" style="display: none;">
+              <table class="history-table">
+                <thead>
+                  <tr>
+                    <th>Certificado N°</th>
+                    <th>Vigente Desde</th>
+                    <th>Vencimiento</th>
+                    <th>Resultado</th>
+                    <th>Estado</th>
+                  </tr>
+                </thead>
+                <tbody id="history-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tarjeta SUNARP -->
+        <!-- Tarjeta SUNARP ULTRA DETALLADA CON TARJETA REGISTRAL -->
+        <div class="data-card" id="card-sunarp">
+          <div class="card-header">
+            <span class="card-title">Identidad & SUNARP (Oficial)</span>
+            <span class="source-badge" id="badge-sunarp-source">Registral Oficial</span>
+          </div>
+          <div class="data-list">
+            <div class="data-item">
+              <span class="item-label">Marca y Modelo:</span>
+              <span class="item-value highlight-terracotta" id="val-sunarp-model">--</span>
+            </div>
+            <div class="data-item">
+              <span class="item-label">N° Serie / VIN:</span>
+              <span class="item-value" id="val-sunarp-vin" style="font-family: ui-monospace, SFMono-Regular, monospace; font-weight: 700; letter-spacing: 0.05em;">--</span>
+            </div>
+            <div class="data-item">
+              <span class="item-label">N° de Motor:</span>
+              <span class="item-value" id="val-sunarp-engine" style="font-family: ui-monospace, SFMono-Regular, monospace; font-weight: 700;">--</span>
+            </div>
+            <div class="data-item">
+              <span class="item-label">Color Registrado:</span>
+              <span class="item-value" id="val-sunarp-color">--</span>
+            </div>
+            <div class="data-item">
+              <span class="item-label">Año de Modelo:</span>
+              <span class="item-value" id="val-sunarp-year">--</span>
+            </div>
+            <div class="data-item">
+              <span class="item-label">Sede / Partida:</span>
+              <span class="item-value" id="val-sunarp-zone">--</span>
+            </div>
+            <div class="data-item">
+              <span class="item-label">Titular Registral:</span>
+              <span class="item-value" id="val-sunarp-owner" style="font-size: 0.85rem; font-weight: 700; color: var(--text-primary);">--</span>
+            </div>
+          </div>
+
+          <!-- Botón para ver la Tarjeta Oficial Registral Digital -->
+          <div id="sunarp-tarjeta-wrapper" style="display: none; margin-top: 1rem; border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 0.85rem;">
+            <button type="button" class="mtc-history-btn" id="btn-toggle-tarjeta" onclick="toggleTarjetaSunarp()">
+              <span>Ver Tarjeta Registral Emitida por SUNARP</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </button>
+            <div id="tarjeta-img-container" style="display: none; margin-top: 0.85rem; text-align: center; background: rgba(0,0,0,0.5); padding: 0.75rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);">
+              <img id="img-sunarp-tarjeta" src="" alt="Tarjeta Oficial de Identificación Vehicular SUNARP" style="max-width: 100%; height: auto; border-radius: 6px; box-shadow: 0 4px 20px rgba(0,0,0,0.8);" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Tarjeta SAT Lima ULTRA DETALLADA CON DESGLOSE DE PAPELETAS -->
+        <div class="data-card" id="card-sat" style="grid-column: 1 / -1;">
+          <div class="card-header">
+            <span class="card-title">SAT Lima Metropolitana (Oficial)</span>
+            <span class="source-badge" id="badge-sat-source">Tributario / Tránsito</span>
+          </div>
+          <div class="data-list" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem;">
+            <div class="data-item" style="flex-direction: column; align-items: flex-start;">
+              <span class="item-label">Orden de Captura / Coactivo:</span>
+              <span class="item-value" id="val-sat-capture">--</span>
+            </div>
+            <div class="data-item" style="flex-direction: column; align-items: flex-start;">
+              <span class="item-label">Papeletas Pendientes:</span>
+              <span class="item-value" id="val-sat-fines">--</span>
+            </div>
+            <div class="data-item" style="flex-direction: column; align-items: flex-start;">
+              <span class="item-label">Deuda Total SAT Lima:</span>
+              <span class="item-value highlight-amber" id="val-sat-debt" style="font-size: 1.2rem;">--</span>
+            </div>
+          </div>
+
+          <!-- Desglose Completo de Papeletas (Abierto por defecto) -->
+          <div id="sat-fines-wrapper" style="display: none; margin-top: 1.25rem; border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 1rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+              <span style="font-weight: 800; font-size: 0.95rem; color: #fde68a;">
+                Registro Oficial de Papeletas (<span id="sat-fines-count">0</span> infracciones encontradas)
+              </span>
+            </div>
+
+            <div id="sat-fines-container" class="history-table-container" style="display: block; margin-top: 0.5rem; overflow-x: auto;">
+              <table class="history-table" style="min-width: 900px;">
+                <thead>
+                  <tr>
+                    <th>Falta / Reg.</th>
+                    <th>N° Documento</th>
+                    <th>Fecha Infracción</th>
+                    <th>Importe Original</th>
+                    <th>Costas/Gastos</th>
+                    <th>Descuento</th>
+                    <th>Deuda Total</th>
+                    <th>Estado</th>
+                    <th>Licencia</th>
+                    <th>Infractor DNI</th>
+                  </tr>
+                </thead>
+                <tbody id="sat-fines-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Alerta y Desglose de Órdenes de Captura SAT (si existen) -->
+          <div id="sat-capture-wrapper" style="display: none; margin-top: 1.25rem; border-top: 1px solid rgba(244, 63, 94, 0.25); padding-top: 1rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+              <span style="font-weight: 800; font-size: 0.95rem; color: var(--rose);">
+                Órdenes de Captura / Embargo Registradas en el SAT (<span id="sat-capture-count">0</span>)
+              </span>
+            </div>
+            <div class="history-table-container" style="display: block; margin-top: 0.5rem; overflow-x: auto; border-color: rgba(244, 63, 94, 0.35);">
+              <table class="history-table" style="min-width: 700px;">
+                <thead>
+                  <tr>
+                    <th>N° Expediente</th>
+                    <th>Documento</th>
+                    <th>Fecha Medida</th>
+                    <th>Tipo de Medida</th>
+                    <th>Monto Afectación</th>
+                    <th>Estado</th>
+                  </tr>
+                </thead>
+                <tbody id="sat-capture-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tarjeta SOAT APESEG ULTRA DETALLADA CON HISTORIAL DE SEGUROS -->
+        <div class="data-card" id="card-soat" style="grid-column: 1 / -1;">
+          <div class="card-header">
+            <span class="card-title">Seguro SOAT (APESEG Oficial)</span>
+            <span class="source-badge" id="badge-soat-source">Póliza Obligatoria</span>
+          </div>
+          <!-- Banner explicativo en caso de enfriamiento temporal de APESEG -->
+          <div id="soat-cooldown-notice" style="display: none; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 10px; padding: 0.9rem 1.1rem; margin-bottom: 1.25rem; font-size: 0.88rem; color: #fef3c7; line-height: 1.45;">
+            <strong>Servidor Oficial de Aseguradoras (APESEG) en Enfriamiento Temporal:</strong><br>
+            El sistema de APESEG está regulando consultas por alta demanda. Esto <u>NO</u> significa que el vehículo carezca de SOAT. El token de consulta se habilitará automáticamente en unos minutos para descargar la póliza vigente y su historial.
+          </div>
+          <div class="data-list" id="soat-data-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem;">
+            <div class="data-item" style="flex-direction: column; align-items: flex-start;">
+              <span class="item-label">Estado de Cobertura:</span>
+              <span class="item-value" id="val-soat-status">--</span>
+            </div>
+            <div class="data-item" style="flex-direction: column; align-items: flex-start;">
+              <span class="item-label">Compañía Aseguradora:</span>
+              <span class="item-value highlight-terracotta" id="val-soat-company">--</span>
+            </div>
+            <div class="data-item" style="flex-direction: column; align-items: flex-start;">
+              <span class="item-label">Período de Vigencia:</span>
+              <span class="item-value" id="val-soat-dates">--</span>
+            </div>
+            <div class="data-item" style="flex-direction: column; align-items: flex-start;">
+              <span class="item-label">N° de Póliza / Certificado:</span>
+              <span class="item-value" id="val-soat-policy" style="font-family: ui-monospace, SFMono-Regular, monospace; font-weight: 700;">--</span>
+            </div>
+            <div class="data-item" style="flex-direction: column; align-items: flex-start;">
+              <span class="item-label">Tipo de Uso Registrado:</span>
+              <span class="item-value" id="val-soat-use">--</span>
+            </div>
+            <div class="data-item" style="flex-direction: column; align-items: flex-start;">
+              <span class="item-label">Tipo de Certificado:</span>
+              <span class="item-value" id="val-soat-type">--</span>
+            </div>
+            <div class="data-item" style="flex-direction: column; align-items: flex-start;">
+              <span class="item-label">Clase & Asientos:</span>
+              <span class="item-value" id="val-soat-class">--</span>
+            </div>
+            <div class="data-item" style="flex-direction: column; align-items: flex-start;">
+              <span class="item-label">Fecha de Emisión:</span>
+              <span class="item-value" id="val-soat-created" style="color: var(--text-secondary);">--</span>
+            </div>
+          </div>
+
+          <!-- Historial de Pólizas Anteriores Desplegable -->
+          <div id="soat-history-wrapper" style="display: none; margin-top: 1.25rem; border-top: 1px solid var(--border-subtle); padding-top: 1rem;">
+            <button type="button" class="mtc-history-btn" id="btn-toggle-soat-history" onclick="toggleSoatHistory()">
+              <span>Ver Historial Completo de Seguros (<span id="soat-history-count">0</span> registradas en APESEG)</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </button>
+
+            <div id="soat-history-container" class="history-table-container" style="display: block; margin-top: 0.75rem; overflow-x: auto;">
+              <table class="history-table" style="min-width: 850px;">
+                <thead>
+                  <tr>
+                    <th>Compañía Aseguradora</th>
+                    <th>Estado</th>
+                    <th>Vigente Desde</th>
+                    <th>Vencimiento</th>
+                    <th>N° Póliza / Certificado</th>
+                    <th>Uso Registrado</th>
+                    <th>Clase</th>
+                    <th>Tipo</th>
+                    <th>Fec. Emisión</th>
+                  </tr>
+                </thead>
+                <tbody id="soat-history-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tarjeta GNV INFOGAS & FISE Ahorro GNV -->
+        <div class="data-card" id="card-gnv" style="grid-column: 1 / -1;">
+          <div class="card-header">
+            <span class="card-title">Sistema de Gas (INFOGAS & FISE Oficial)</span>
+            <span class="source-badge" id="badge-gnv-source">Control de Carga</span>
+          </div>
+          <div class="data-list" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem;">
+            <div class="data-item" style="flex-direction: column; align-items: flex-start;">
+              <span class="item-label">Tipo de Combustible:</span>
+              <span class="item-value highlight-terracotta" id="val-gnv-fuel">--</span>
+            </div>
+            <div class="data-item" style="flex-direction: column; align-items: flex-start;">
+              <span class="item-label">Estado del Chip de Carga:</span>
+              <span class="item-value" id="val-gnv-chip">--</span>
+            </div>
+            <div class="data-item" style="flex-direction: column; align-items: flex-start;">
+              <span class="item-label">Próxima Revisión Anual:</span>
+              <span class="item-value" id="val-gnv-annual">--</span>
+            </div>
+            <div class="data-item" style="flex-direction: column; align-items: flex-start;">
+              <span class="item-label">Vencimiento del Cilindro (Quinquenal):</span>
+              <span class="item-value" id="val-gnv-cylinder">--</span>
+            </div>
+            <div class="data-item" style="flex-direction: column; align-items: flex-start;">
+              <span class="item-label">Estado de Financiamiento:</span>
+              <span class="item-value" id="val-gnv-credit">--</span>
+            </div>
+            <div class="data-item" style="flex-direction: column; align-items: flex-start;">
+              <span class="item-label">Programa FISE (MINEM):</span>
+              <span class="item-value" id="val-gnv-fise">--</span>
+            </div>
+          </div>
+
+          <!-- Desglose de Amortizaciones FISE en Grifos (si aplica) -->
+          <div id="gnv-fise-wrapper" style="display: none; margin-top: 1.25rem; border-top: 1px solid var(--border-subtle); padding-top: 1rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+              <span style="font-weight: 800; font-size: 0.95rem; color: var(--color-sand);">
+                Historial de Recaudos en Estaciones de Servicio (FISE Ahorro GNV)
+              </span>
+            </div>
+            <div class="history-table-container" style="display: block; margin-top: 0.5rem; overflow-x: auto;">
+              <table class="history-table" style="min-width: 650px;">
+                <thead>
+                  <tr>
+                    <th>Concepto</th>
+                    <th>Monto Recaudado</th>
+                    <th>Primer Recaudo</th>
+                    <th>Último Recaudo</th>
+                    <th>Cargas Realizadas</th>
+                  </tr>
+                </thead>
+                <tbody id="gnv-fise-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tarjeta SUTRAN & Callao -->
+        <div class="data-card" id="card-fines">
+          <div class="card-header">
+            <span class="card-title">Carreteras & Callao</span>
+            <span class="source-badge">Fotopapeletas</span>
+          </div>
+          <div class="data-list">
+            <div class="data-item">
+              <span class="item-label">Infracciones SUTRAN:</span>
+              <span class="item-value" id="val-sutran-status">--</span>
+            </div>
+            <div class="data-item">
+              <span class="item-label">Fotopapeletas Callao:</span>
+              <span class="item-value" id="val-callao-status">--</span>
+            </div>
+            <div class="data-item">
+              <span class="item-label">Habilitación ATU (Taxi):</span>
+              <span class="item-value" id="val-atu-status">--</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Checklist Físico para tu Padre -->
+      <div class="checklist-card">
+        <div class="checklist-title">
+          Checklist de Inspección Presencial para el Comprador
+        </div>
+        <p style="color: var(--text-secondary); font-size: 0.92rem;">
+          Puntos críticos que tu padre debe revisar con sus propios ojos antes de transferir dinero:
+        </p>
+
+        <div class="checklist-grid" id="checklist-grid"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    // Gestión de Tema Claro / Oscuro con Persistencia
+    const themeToggleBtn = document.getElementById('theme-toggle');
+    const themeToggleIcon = document.getElementById('theme-toggle-icon');
+    const themeToggleText = document.getElementById('theme-toggle-text');
+
+    function applyTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      localStorage.setItem('autocheck_theme', theme);
+      if (theme === 'dark') {
+        if (themeToggleIcon) themeToggleIcon.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>';
+        if (themeToggleText) themeToggleText.textContent = 'Modo Noche';
+      } else {
+        if (themeToggleIcon) themeToggleIcon.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>';
+        if (themeToggleText) themeToggleText.textContent = 'Modo Claro';
+      }
+    }
+
+    // Inicializar tema guardado o según preferencia
+    const savedTheme = localStorage.getItem('autocheck_theme') || 'light';
+    applyTheme(savedTheme);
+
+    if (themeToggleBtn) {
+      themeToggleBtn.addEventListener('click', () => {
+        const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+        applyTheme(newTheme);
+      });
+    }
+
+    // Auto-formateo inteligente en vivo de la placa (Mayúsculas y guión automático)
+    const plateInput = document.getElementById('plate-input');
+    if (plateInput) {
+      plateInput.addEventListener('input', (e) => {
+        let raw = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+        if (raw.length > 3) {
+          e.target.value = raw.slice(0, 3) + '-' + raw.slice(3, 6);
+        } else {
+          e.target.value = raw;
+        }
+      });
+    }
+
+    let cooldownTimerInterval = null;
+
+    function formatMMSS(totalSecs) {
+      const m = Math.floor(totalSecs / 60);
+      const s = totalSecs % 60;
+      return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
+
+    function startCooldownTimer(seconds) {
+      if (cooldownTimerInterval) {
+        clearInterval(cooldownTimerInterval);
+        cooldownTimerInterval = null;
+      }
+
+      // Limitar a máximo 45 segundos reales de ventana
+      let remaining = Math.min(Math.max(1, parseInt(seconds, 10) || 30), 45);
+      const box = document.getElementById('mtc-cooldown-box');
+      const timerDisplay = document.getElementById('cooldown-timer-display');
+      const retryBtn = document.getElementById('btn-cooldown-retry');
+      const descText = document.getElementById('cooldown-desc-text');
+
+      if (!box || !timerDisplay) return;
+
+      box.style.display = 'flex';
+      retryBtn.style.display = 'none';
+      timerDisplay.textContent = formatMMSS(remaining);
+      timerDisplay.style.color = '#fde68a';
+      timerDisplay.style.borderColor = 'rgba(245, 158, 11, 0.5)';
+      descText.textContent = 'El servidor oficial del Ministerio de Transportes y Comunicaciones (MTC) ha establecido un intervalo temporal de regulación por alta demanda de consultas simultáneas. La disponibilidad del portal se restablecerá de manera automática al concluir el tiempo estimado.';
+
+      cooldownTimerInterval = setInterval(() => {
+        remaining--;
+        if (remaining <= 0) {
+          clearInterval(cooldownTimerInterval);
+          cooldownTimerInterval = null;
+          timerDisplay.textContent = '00:00';
+          timerDisplay.style.color = '#a7f3d0';
+          timerDisplay.style.borderColor = 'rgba(16, 185, 129, 0.5)';
+          descText.textContent = 'Ventana de regulación completada. El servidor del MTC se encuentra listo para procesar una nueva consulta.';
+          retryBtn.style.display = 'inline-flex';
+        } else {
+          timerDisplay.textContent = formatMMSS(remaining);
+        }
+      }, 1000);
+    }
+
+    function retryAudit() {
+      document.getElementById('vehicle-form').dispatchEvent(new Event('submit'));
+    }
+
+    function toggleHistory() {
+      const el = document.getElementById('history-table-container');
+      el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function toggleTarjetaSunarp() {
+      const el = document.getElementById('tarjeta-img-container');
+      if (el) {
+        el.style.display = el.style.display === 'none' ? 'block' : 'none';
+      }
+    }
+
+    function toggleSatFines() {
+      const el = document.getElementById('sat-fines-container');
+      if (el) {
+        el.style.display = el.style.display === 'none' ? 'block' : 'none';
+      }
+    }
+
+    function toggleSoatHistory() {
+      const el = document.getElementById('soat-history-container');
+      if (el) {
+        el.style.display = el.style.display === 'none' ? 'block' : 'none';
+      }
+    }
+
+    function consult(p) {
+      document.getElementById('plate-input').value = p;
+      document.getElementById('vehicle-form').dispatchEvent(new Event('submit'));
+    }
+
+    document.getElementById('vehicle-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const rawPlate = document.getElementById('plate-input').value.trim();
+      if (!rawPlate) return;
+
+      const loading = document.getElementById('loading-box');
+      const reportView = document.getElementById('report-view');
+      const btn = document.getElementById('btn-search');
+
+      loading.style.display = 'block';
+      reportView.style.display = 'none';
+      btn.disabled = true;
+
+      try {
+        const res = await fetch(`/api/vehicle/report?plate=${encodeURIComponent(rawPlate)}`);
+        const json = await res.json();
+
+        if (!json.success) {
+          alert('Error en la consulta: ' + (json.error || 'No se pudo obtener información'));
+          return;
+        }
+
+        const data = json.data;
+
+        // Hero
+        document.getElementById('hero-plate').textContent = data.plate;
+        document.getElementById('hero-meta').textContent = `Auditoría completada en ${(data.totalDurationMs / 1000).toFixed(2)}s • Deuda Total Detectada: S/ ${(data.totalDebtConsolidatedPEN || 0).toFixed(2)}`;
+
+        const riskPill = document.getElementById('hero-risk');
+        if (data.overallRisk === 'LOW') {
+          riskPill.textContent = 'Seguro / Sin Alertas Graves';
+          riskPill.className = 'risk-pill risk-low';
+        } else if (data.overallRisk === 'MEDIUM') {
+          riskPill.textContent = 'Atención / Revisar Observaciones';
+          riskPill.className = 'risk-pill risk-medium';
+        } else {
+          riskPill.textContent = 'Alto Riesgo / Alerta Crítica';
+          riskPill.className = 'risk-pill risk-critical';
+        }
+
+        // Alertas
+        const alertsBox = document.getElementById('alerts-box');
+        alertsBox.innerHTML = '';
+        if (data.alerts && data.alerts.length > 0) {
+          data.alerts.forEach(a => {
+            const card = document.createElement('div');
+            card.className = `alert-card ${a.level}`;
+            card.innerHTML = `<strong>${a.title}:</strong> <span>${a.message}</span>`;
+            alertsBox.appendChild(card);
+          });
+        }
+
+        // MTC CITV 100% DETALLADO
+        const mtc = data.modules.mtcCitv?.data;
+        if (mtc) {
+          const statusEl = document.getElementById('val-mtc-status');
+          statusEl.textContent = mtc.statusLabel;
+          statusEl.className = 'item-value ' + (mtc.status === 'VIGENTE' ? 'highlight-emerald' : (mtc.status === 'VENCIDO' ? 'highlight-rose' : ((mtc.status === 'NO_CONSEGUIDO' || mtc.status === 'COOLDOWN_SEGURIDAD') ? 'highlight-amber' : '')));
+          
+          const latest = mtc.history && mtc.history.length > 0 ? mtc.history[0] : null;
+          document.getElementById('val-mtc-dates').textContent = latest ? `${latest.validFrom} al ${latest.validTo}` : (mtc.expirationDate || 'No determinado');
+          document.getElementById('val-mtc-cert').textContent = latest ? latest.certificateNumber : (mtc.latestCertificate || 'NO REGISTRA');
+          document.getElementById('val-mtc-center').textContent = mtc.issuingCenter || 'Taller Autorizado MTC';
+          document.getElementById('val-mtc-address').textContent = mtc.centerAddress || 'Planta de Inspección Registrada en MTC';
+
+          // Manejo del Bloque Cooldown con Temporizador en Vivo
+          const cooldownBox = document.getElementById('mtc-cooldown-box');
+          if (mtc.status === 'COOLDOWN_SEGURIDAD' || (mtc.cooldownSeconds && mtc.cooldownSeconds > 0)) {
+            startCooldownTimer(mtc.cooldownSeconds || 60);
+          } else {
+            if (cooldownBox) cooldownBox.style.display = 'none';
+            if (cooldownTimerInterval) {
+              clearInterval(cooldownTimerInterval);
+              cooldownTimerInterval = null;
+            }
+          }
+
+          // Tabla Histórica de Certificados
+          const historyWrapper = document.getElementById('mtc-history-wrapper');
+          const tbody = document.getElementById('history-tbody');
+          tbody.innerHTML = '';
+
+          if (mtc.history && mtc.history.length > 0) {
+            document.getElementById('history-count').textContent = mtc.history.length;
+            historyWrapper.style.display = 'block';
+
+            mtc.history.forEach(h => {
+              const tr = document.createElement('tr');
+              tr.innerHTML = `
+                <td style="font-family: ui-monospace, SFMono-Regular, monospace; font-weight: 700;">${h.certificateNumber || h.certificate || 'CITV'}</td>
+                <td>${h.validFrom || 'N/D'}</td>
+                <td><strong>${h.validTo || 'N/D'}</strong></td>
+                <td><span class="badge-tag approved">${h.result || 'APROBADO'}</span></td>
+                <td><span class="badge-tag ${h.status === 'VIGENTE' ? 'approved' : 'expired'}">${h.status || 'VIGENTE'}</span></td>
+              `;
+              tbody.appendChild(tr);
+            });
+          } else {
+            historyWrapper.style.display = 'none';
+          }
+
+          document.getElementById('card-mtc').className = 'data-card ' + (mtc.status === 'VENCIDO' ? 'danger' : ((mtc.status === 'NO_CONSEGUIDO' || mtc.status === 'COOLDOWN_SEGURIDAD') ? 'warn' : ''));
+        }
+
+        // SUNARP (Oficial en Vivo)
+        const sunarp = data.modules.sunarp?.data;
+        if (sunarp) {
+          document.getElementById('val-sunarp-model').textContent = `${sunarp.brand} - ${sunarp.model}`;
+          document.getElementById('val-sunarp-year').textContent = sunarp.yearModel ? `Modelo ${sunarp.yearModel}` : 'No determinado';
+          document.getElementById('val-sunarp-vin').textContent = sunarp.vin || 'NO REGISTRA';
+          document.getElementById('val-sunarp-engine').textContent = sunarp.engineNumber || 'NO REGISTRA';
+          document.getElementById('val-sunarp-color').textContent = sunarp.color || 'NO REGISTRA';
+          document.getElementById('val-sunarp-zone').textContent = sunarp.registrationZone || 'ZONA REGISTRAL OFICIAL';
+          document.getElementById('val-sunarp-owner').textContent = sunarp.ownerName || 'TITULAR REGISTRADO';
+
+          // Mostrar tarjeta digital si está disponible
+          const tarjetaWrapper = document.getElementById('sunarp-tarjeta-wrapper');
+          const imgTarjeta = document.getElementById('img-sunarp-tarjeta');
+          if (sunarp.tarjetaBase64 && tarjetaWrapper && imgTarjeta) {
+            imgTarjeta.src = sunarp.tarjetaBase64;
+            tarjetaWrapper.style.display = 'block';
+          } else if (tarjetaWrapper) {
+            tarjetaWrapper.style.display = 'none';
+          }
+
+          const badgeSource = document.getElementById('badge-sunarp-source');
+          if (badgeSource) {
+            badgeSource.textContent = data.modules.sunarp.source === 'SUNARP_OFICIAL_LIVE' ? 'Oficial en Vivo' : 'Registral';
+          }
+        }
+
+        // SAT Lima (Oficial en Vivo)
+        const sat = data.modules.satLima?.data;
+        if (sat) {
+          const capEl = document.getElementById('val-sat-capture');
+          if (sat.hasCaptureOrder) {
+            capEl.innerHTML = `<span class="highlight-rose" style="font-weight: 800; display: inline-flex; align-items: center; gap: 0.35rem;">SÍ, TIENE ORDEN DE CAPTURA ${sat.totalCaptures ? '(' + sat.totalCaptures + ')' : ''}</span>`;
+          } else {
+            capEl.innerHTML = `<span class="highlight-emerald" style="font-weight: 700; display: inline-flex; align-items: center; gap: 0.35rem;">Sin Orden de Captura (Oficial SAT)</span>`;
+          }
+          
+          document.getElementById('val-sat-fines').textContent = `${sat.totalFines || 0} papeletas pendientes`;
+          document.getElementById('val-sat-debt').textContent = `S/ ${(sat.totalDebtPEN || 0).toFixed(2)}`;
+
+          const badgeSatSource = document.getElementById('badge-sat-source');
+          if (badgeSatSource) {
+            badgeSatSource.textContent = 'SAT Oficial en Vivo';
+          }
+
+          // Desglose de Órdenes de Captura SAT
+          const capWrapper = document.getElementById('sat-capture-wrapper');
+          const capTbody = document.getElementById('sat-capture-tbody');
+          if (capWrapper && capTbody) {
+            if (sat.hasCaptureOrder && sat.captureRecords && sat.captureRecords.length > 0) {
+              document.getElementById('sat-capture-count').textContent = sat.captureRecords.length;
+              capWrapper.style.display = 'block';
+              capTbody.innerHTML = '';
+              sat.captureRecords.forEach(c => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                  <td style="font-family: ui-monospace, SFMono-Regular, monospace; font-weight: 800; color: var(--rose);">${c.expediente || 'N/D'}</td>
+                  <td>${c.documento || 'N/D'}</td>
+                  <td>${c.fechaMedida || 'N/D'}</td>
+                  <td><span class="badge-tag expired">${c.tipoMedida || 'CAPTURA'}</span></td>
+                  <td style="text-align: right; font-weight: 700;">${c.montoPEN || 'N/D'}</td>
+                  <td><span class="badge-tag expired">${c.estado || 'VIGENTE'}</span></td>
+                `;
+                capTbody.appendChild(tr);
+              });
+            } else {
+              capWrapper.style.display = 'none';
+            }
+          }
+
+          // Desglose de Papeletas (Abierto por defecto con toda la información disponible)
+          const finesWrapper = document.getElementById('sat-fines-wrapper');
+          const finesContainer = document.getElementById('sat-fines-container');
+          const finesTbody = document.getElementById('sat-fines-tbody');
+          finesTbody.innerHTML = '';
+
+          if (sat.records && sat.records.length > 0) {
+            document.getElementById('sat-fines-count').textContent = sat.records.length;
+            finesWrapper.style.display = 'block';
+            finesContainer.style.display = 'block';
+
+            sat.records.forEach(r => {
+              const tr = document.createElement('tr');
+              const isVerySerious = (r.infractionCode || '').toUpperCase().startsWith('M');
+              const isSerious = (r.infractionCode || '').toUpperCase().startsWith('G');
+              const tagClass = isVerySerious ? 'expired' : (isSerious ? 'warn' : 'approved');
+
+              tr.innerHTML = `
+                <td>
+                  <span class="badge-tag ${tagClass}" style="font-size: 0.8rem; letter-spacing: 0.05em;">${r.infractionCode || 'FALTA'}</span>
+                  <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">${r.reglamento || 'RNT'}</div>
+                </td>
+                <td style="font-family: ui-monospace, SFMono-Regular, monospace; font-weight: 700; color: var(--text-primary);">${r.documentNumber || 'N/D'}</td>
+                <td style="white-space: nowrap; color: var(--text-secondary);">${r.date || 'N/D'}</td>
+                <td style="text-align: right; color: var(--text-secondary);">S/ ${(r.originalAmountPEN || 0).toFixed(2)}</td>
+                <td style="text-align: right; color: var(--text-muted);">S/ ${(r.expensesPEN || 0).toFixed(2)}</td>
+                <td style="text-align: right; color: var(--emerald); font-weight: 600;">S/ ${(r.discountPEN || 0).toFixed(2)}</td>
+                <td style="color: var(--color-terracotta); font-weight: 800; font-size: 0.95rem; text-align: right; white-space: nowrap;">S/ ${(r.debtPEN || 0).toFixed(2)}</td>
+                <td>
+                  <span style="display: inline-block; padding: 0.25rem 0.6rem; border-radius: 6px; font-size: 0.78rem; font-weight: 700; background: var(--bg-inner-box); color: var(--text-primary); border: 1px solid var(--border-subtle);">
+                    ${r.status || 'Expediente Pendiente'}
+                  </span>
+                </td>
+                <td style="font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.82rem; color: var(--text-secondary);">${r.driverLicense || 'N/D'}</td>
+                <td style="font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.82rem; color: var(--text-muted);">${r.driverDni || 'N/D'}</td>
+              `;
+              finesTbody.appendChild(tr);
+            });
+          } else {
+            finesWrapper.style.display = 'none';
+          }
+
+          document.getElementById('card-sat').className = 'data-card ' + (sat.hasCaptureOrder ? 'danger' : (sat.hasFines ? 'warn' : ''));
+        }
+
+        // SOAT (APESEG Oficial en Vivo)
+        const soat = data.modules.apeseg?.data;
+        const cooldownNotice = document.getElementById('soat-cooldown-notice');
+        const soatStatusEl = document.getElementById('val-soat-status');
+
+        if (soat) {
+          if (soat.status === 'RATE_LIMIT_COOLDOWN') {
+            soatStatusEl.textContent = 'Servidor en Enfriamiento';
+            soatStatusEl.className = 'item-value highlight-amber';
+            if (cooldownNotice) cooldownNotice.style.display = 'block';
+          } else {
+            soatStatusEl.textContent = soat.statusLabel || (soat.isExpired ? 'SOAT VENCIDO' : 'SOAT VIGENTE');
+            soatStatusEl.className = 'item-value ' + (soat.isExpired ? 'highlight-rose' : 'highlight-emerald');
+            if (cooldownNotice) cooldownNotice.style.display = 'none';
+          }
+          
+          document.getElementById('val-soat-company').textContent = soat.company || 'NO REGISTRA';
+          document.getElementById('val-soat-dates').textContent = (soat.validFrom && soat.validTo) ? `${soat.validFrom} al ${soat.validTo}` : 'No determinado';
+          document.getElementById('val-soat-policy').textContent = soat.policyNumber || 'NO DETECTADO';
+          document.getElementById('val-soat-use').textContent = soat.useType || 'PARTICULAR';
+          document.getElementById('val-soat-type').textContent = soat.certificateType || 'ELECTRÓNICO';
+          document.getElementById('val-soat-class').textContent = `${soat.vehicleClass || 'AUTOMOVIL'} (${soat.seats || '5'} asientos)`;
+          document.getElementById('val-soat-created').textContent = soat.creationDate || 'N/D';
+
+          const badgeSoatSource = document.getElementById('badge-soat-source');
+          if (badgeSoatSource) {
+            badgeSoatSource.textContent = data.modules.apeseg.source === 'APESEG_OFICIAL_LIVE' ? 'Oficial en Vivo' : 'Póliza Obligatoria';
+          }
+
+          // Historial de Pólizas Anteriores
+          const soatWrapper = document.getElementById('soat-history-wrapper');
+          const soatTbody = document.getElementById('soat-history-tbody');
+          if (soatWrapper && soatTbody) {
+            if (soat.history && soat.history.length > 0) {
+              document.getElementById('soat-history-count').textContent = soat.history.length;
+              soatWrapper.style.display = 'block';
+              soatTbody.innerHTML = '';
+              soat.history.forEach(h => {
+                const tr = document.createElement('tr');
+                const isV = (h.status || '').toUpperCase() === 'VIGENTE';
+                const tagClass = isV ? 'approved' : 'expired';
+                tr.innerHTML = `
+                  <td style="font-weight: 700; color: var(--text-primary);">${h.company}</td>
+                  <td><span class="badge-tag ${tagClass}">${h.status}</span></td>
+                  <td>${h.validFrom}</td>
+                  <td><strong>${h.validTo}</strong></td>
+                  <td style="font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.82rem;">${h.policyNumber}</td>
+                  <td><span class="badge-tag ${h.useType.includes('TAXI') || h.useType.includes('COMERCIAL') ? 'warn' : 'approved'}">${h.useType}</span></td>
+                  <td style="font-size: 0.82rem; color: var(--text-secondary);">${h.vehicleClass}</td>
+                  <td style="font-size: 0.82rem; color: var(--text-muted);">${h.certificateType}</td>
+                  <td style="font-size: 0.82rem; color: var(--text-muted);">${h.creationDate}</td>
+                `;
+                soatTbody.appendChild(tr);
+              });
+            } else {
+              soatWrapper.style.display = 'none';
+            }
+          }
+
+          document.getElementById('card-soat').className = 'data-card ' + (soat.status === 'RATE_LIMIT_COOLDOWN' ? 'warn' : (soat.isExpired ? 'danger' : (soat.isCommercialOrTaxi ? 'warn' : '')));
+        }
+
+        // GNV (INFOGAS & FISE Oficial)
+        const gnv = data.modules.infogas?.data;
+        if (gnv) {
+          document.getElementById('val-gnv-fuel').textContent = gnv.fuelType || 'GASOLINA / ORIGINAL';
+          
+          const chipEl = document.getElementById('val-gnv-chip');
+          if (gnv.hasGnv) {
+            chipEl.textContent = gnv.chipStatusLabel || (gnv.isChipBlocked ? 'Chip Bloqueado' : 'Chip Habilitado');
+            chipEl.className = 'item-value ' + (gnv.isChipBlocked ? 'highlight-rose' : 'highlight-emerald');
+          } else {
+            chipEl.textContent = gnv.chipStatusLabel || 'Sin Chip (Original)';
+            chipEl.className = 'item-value';
+          }
+
+          const annualEl = document.getElementById('val-gnv-annual');
+          annualEl.textContent = gnv.hasGnv ? gnv.annualExpiry : 'No aplica';
+          annualEl.className = 'item-value ' + (gnv.isAnnualExpired ? 'highlight-rose' : (gnv.hasGnv ? 'highlight-emerald' : ''));
+
+          const cylEl = document.getElementById('val-gnv-cylinder');
+          cylEl.textContent = gnv.hasGnv ? gnv.cylinderExpiry : 'No aplica';
+          cylEl.className = 'item-value ' + (gnv.isCylinderExpired ? 'highlight-rose' : (gnv.hasGnv ? 'highlight-emerald' : ''));
+
+          const creditEl = document.getElementById('val-gnv-credit');
+          creditEl.textContent = gnv.creditStatus || 'Sin financiamiento';
+          creditEl.className = 'item-value ' + (gnv.hasActiveCredit ? 'highlight-amber' : '');
+
+          const fiseEl = document.getElementById('val-gnv-fise');
+          if (gnv.fise?.financed) {
+            fiseEl.textContent = `Financiado (Pendiente: S/ ${(gnv.fise.pendingDebtPEN || 0).toFixed(2)})`;
+            fiseEl.className = 'item-value ' + (gnv.fise.overdueDebtPEN > 0 ? 'highlight-rose' : 'highlight-amber');
+          } else {
+            fiseEl.textContent = 'Sin financiamiento estatal FISE';
+            fiseEl.className = 'item-value';
+          }
+
+          const fiseWrapper = document.getElementById('gnv-fise-wrapper');
+          const fiseTbody = document.getElementById('gnv-fise-tbody');
+          if (fiseWrapper && fiseTbody) {
+            if (gnv.fise?.recaudos && gnv.fise.recaudos.length > 0) {
+              fiseWrapper.style.display = 'block';
+              fiseTbody.innerHTML = '';
+              gnv.fise.recaudos.forEach(r => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                  <td style="font-weight: 700; color: var(--text-primary);">${r.tipo || 'Recaudo GNV'}</td>
+                  <td style="font-weight: 700; color: var(--emerald);">S/ ${(r.monto || 0).toFixed(2)}</td>
+                  <td>${r.primerRecaudo || 'N/D'}</td>
+                  <td><strong>${r.ultimoRecaudo || 'N/D'}</strong></td>
+                  <td>${r.cantidad || 0}</td>
+                `;
+                fiseTbody.appendChild(tr);
+              });
+            } else {
+              fiseWrapper.style.display = 'none';
+            }
+          }
+
+          document.getElementById('card-gnv').className = 'data-card ' + (gnv.isChipBlocked ? 'danger' : ((gnv.isAnnualExpired || gnv.isCylinderExpired || (gnv.fise?.overdueDebtPEN > 0)) ? 'warn' : ''));
+        }
+
+        // SUTRAN / Callao / ATU
+        const sutran = data.modules.sutran?.data;
+        const callao = data.modules.callao?.data;
+        const atu = data.modules.atu?.data;
+
+        document.getElementById('val-sutran-status').textContent = sutran?.hasInfractions ? `S/ ${sutran.totalDebtPEN.toFixed(2)} (${sutran.totalInfractions} multas)` : 'Sin Multas en Carretera';
+        document.getElementById('val-callao-status').textContent = callao?.hasInfractions ? `S/ ${callao.totalDebtPEN.toFixed(2)} (${callao.totalInfractions} fotopapeletas)` : 'Sin Fotopapeletas';
+        document.getElementById('val-atu-status').textContent = atu?.statusLabel || 'Uso Particular';
+
+        // Checklist Físico
+        const chkGrid = document.getElementById('checklist-grid');
+        chkGrid.innerHTML = '';
+        if (data.physicalChecklist) {
+          data.physicalChecklist.forEach(chk => {
+            const el = document.createElement('div');
+            el.className = 'checklist-item';
+            el.innerHTML = `
+              <div class="chk-header">${chk.title}</div>
+              <div class="chk-guide">${chk.guide}</div>
+              <div class="chk-risk">Riesgo si falla: ${chk.riskIfFailed}</div>
+            `;
+            chkGrid.appendChild(el);
+          });
+        }
+
+        reportView.style.display = 'flex';
+      } catch (err) {
+        alert('Error al comunicar con el servidor: ' + err.message);
+      } finally {
+        loading.style.display = 'none';
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
