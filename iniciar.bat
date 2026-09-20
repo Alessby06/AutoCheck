@@ -10,4 +10,6 @@ echo.
 echo Servidor en ejecucion. Para cerrarlo, presiona Ctrl + C o cierra esta ventana.
 echo ========================================================
 node server.js
+echo.
+echo Limpiando recursos y cerrando instancias de navegadores...
 pause

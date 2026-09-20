@@ -1,44 +1,150 @@
-const puppeteer = require('puppeteer-extra');
-const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-puppeteer.use(StealthPlugin());
-
-const MtcNeuralSolver = require('./mtcNeuralSolver');
+const https = require('https');
+const fs = require('fs');
+const path = require('path');
+const { execSync } = require('child_process');
 const PlateValidator = require('../utils/plateValidator');
+const MtcNeuralSolver = require('./mtcNeuralSolver');
 
 /**
- * Scraper de Alta Resiliencia para MTC CITV
- * Combina Navegación Sigilosa (Puppeteer Stealth) con Solución Neuronal Instantánea (MtcNeuralSolver)
- * Supera challenges de Cloudflare y resuelve el captcha en 1 solo intento con 100% de precisión
+ * Resuelve el captcha alfanumérico del MTC utilizando ddddocr en Python como fallback
+ * @param {Buffer} captchaBuffer
+ * @returns {string|null}
+ */
+function solveCaptchaDdddocr(captchaBuffer) {
+  const tmpDir = path.join(__dirname, '..', '..', 'temp_audio');
+  if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+
+  const timestamp = Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+  const tmpImg = path.join(tmpDir, `mtc_cap_${timestamp}.png`);
+
+  try {
+    fs.writeFileSync(tmpImg, captchaBuffer);
+    const cmd = `python -c "import ddddocr; ocr = ddddocr.DdddOcr(show_ad=False); print('RESULT:' + ocr.classification(open(r'${tmpImg}', 'rb').read()))"`;
+    const out = execSync(cmd, { timeout: 10000 }).toString();
+    const match = out.match(/RESULT:(\w+)/);
+    return match ? match[1].trim() : null;
+  } catch (e) {
+    console.warn('[MtcCitvScraper] Fallo en solver ddddocr:', e.message);
+    return null;
+  } finally {
+    try { if (fs.existsSync(tmpImg)) fs.unlinkSync(tmpImg); } catch (e) {}
+  }
+}
+
+/**
+ * Solucionador híbrido de alta precisión:
+ * 1. MtcNeuralSolver en memoria (~46ms)
+ * 2. Si confianza < 0.95 o longitud !== 6, fallback secundario a ddddocr
+ * @param {Buffer} buffer
+ * @returns {Promise<string|null>}
+ */
+async function resolveCaptchaHybrid(buffer) {
+  try {
+    const neural = await MtcNeuralSolver.solve(buffer);
+    if (neural && neural.text && neural.text.length === 6 && neural.confidence >= 0.95) {
+      return neural.text;
+    }
+
+    // Si la confianza es menor a 0.95 o la longitud no es 6, invocar fallback ddddocr
+    const dddd = solveCaptchaDdddocr(buffer);
+    if (dddd && dddd.length === 6) {
+      return dddd;
+    }
+
+    // Si ddddocr falló pero el neural devolvió 6 dígitos con confianza menor, intentar con neural
+    if (neural && neural.text && neural.text.length === 6) {
+      return neural.text;
+    }
+
+    return dddd || null;
+  } catch (err) {
+    console.warn('[MtcCitvScraper] Error en resolución neuronal, intentando ddddocr:', err.message);
+    return solveCaptchaDdddocr(buffer);
+  }
+}
+
+/**
+ * Ejecuta una petición HTTP GET nativa con timeout y control de headers
+ * @param {string} url
+ * @param {Object} options
+ * @returns {Promise<{ statusCode: number, headers: Object, body: string }>}
+ */
+function httpRequest(url, options = {}) {
+  return new Promise((resolve, reject) => {
+    const timeout = options.timeout || 10000;
+    const req = https.get(url, {
+      headers: options.headers || {},
+      timeout
+    }, (res) => {
+      let data = '';
+      res.on('data', chunk => { data += chunk; });
+      res.on('end', () => {
+        resolve({
+          statusCode: res.statusCode,
+          headers: res.headers,
+          body: data
+        });
+      });
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error(`HTTP request timeout (${timeout}ms) hacia ${url}`));
+    });
+
+    req.on('error', (err) => {
+      reject(err);
+    });
+  });
+}
+
+/**
+ * Genera la respuesta estandarizada en caso de Rate Limit / Cooldown de Cloudflare
+ */
+function createCooldownResponse(formattedPlate, cooldownSeconds, latencyMs) {
+  return {
+    success: false,
+    source: 'MTC_CLOUDFLARE_RATE_LIMIT',
+    error: `Ventana de enfriamiento preventiva activa en portal MTC (${cooldownSeconds}s)`,
+    data: {
+      plate: formattedPlate,
+      hasInspection: false,
+      status: 'COOLDOWN_SEGURIDAD',
+      statusLabel: 'Ventana de Regulación Activa en Portal MTC',
+      cooldownSeconds,
+      latestCertificate: 'N/D',
+      expirationDate: 'No determinado',
+      issueDate: 'N/D',
+      issuingCenter: 'PORTAL MTC CITV (Enfriamiento)',
+      centerAddress: 'https://rec.mtc.gob.pe/Citv/ArConsultaCitv',
+      serviceType: 'PARTICULAR',
+      scope: 'NINGUNO',
+      observations: 'El servidor oficial del MTC se encuentra en intervalo de regulación de tráfico (Cloudflare HTTP 429).',
+      totalInspections: 0,
+      history: [],
+      records: [],
+      alertLevel: 'MEDIUM',
+      alertMessage: `Intervalo de espera preventivo del portal MTC activo (${cooldownSeconds}s restante).`
+    },
+    portalUrl: 'https://rec.mtc.gob.pe/Citv/ArConsultaCitv',
+    latencyMs,
+    timestamp: new Date().toISOString()
+  };
+}
+
+/**
+ * Scraper de Alto Rendimiento y Resiliencia para MTC CITV (Inspección Técnica Vehicular)
+ * Opera mediante Fast-Path 100% HTTP nativo (sin Chromium), inferencia neuronal en memoria (46ms),
+ * fallback automático a ddddocr, bypass de Cloudflare 1015 mediante ruta normalizada /Citv/,
+ * e inspección activa de encabezados Cloudflare Edge (retry-after).
  */
 class MtcCitvScraper {
   static MODULE_NAME = 'MTC_CITV';
-  static browserInstance = null;
   static cooldownUntil = 0;
 
   /**
-   * Obtiene o inicializa la instancia global de Chromium sigiloso
-   */
-  static async getBrowser() {
-    if (this.browserInstance && this.browserInstance.isConnected()) {
-      return this.browserInstance;
-    }
-    this.browserInstance = await puppeteer.launch({
-      headless: 'new',
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--disable-gpu',
-        '--window-size=1280,800'
-      ]
-    });
-    return this.browserInstance;
-  }
-
-  /**
-   * Consulta el historial oficial de revisiones técnicas conectando al portal del MTC con Puppeteer Stealth
-   * @param {string} rawPlate - Placa
+   * Consulta el historial oficial de revisiones técnicas del MTC
+   * @param {string} rawPlate - Placa a consultar
    */
   static async query(rawPlate) {
     const startTime = Date.now();
@@ -55,136 +161,122 @@ class MtcCitvScraper {
       };
     }
 
-    // Verificar si existe una ventana de enfriamiento activa
+    // Verificar si existe una ventana de enfriamiento activa (Cloudflare Sentinel)
     if (Date.now() < MtcCitvScraper.cooldownUntil) {
       const remainingSecs = Math.ceil((MtcCitvScraper.cooldownUntil - Date.now()) / 1000);
-      return {
-        success: false,
-        source: 'MTC_CLOUDFLARE_RATE_LIMIT',
-        data: {
-          plate: formattedPlate,
-          hasInspection: false,
-          status: 'COOLDOWN_SEGURIDAD',
-          statusLabel: 'Ventana de Regulación Activa en Portal MTC',
-          cooldownSeconds: remainingSecs,
-          latestCertificate: 'N/D',
-          expirationDate: 'No determinado',
-          issueDate: 'N/D',
-          issuingCenter: 'PORTAL MTC CITV (Enfriamiento)',
-          centerAddress: 'https://rec.mtc.gob.pe/Citv/ArConsultaCitv',
-          serviceType: 'PARTICULAR',
-          scope: 'NINGUNO',
-          observations: 'El servidor oficial del MTC se encuentra en intervalo de regulación de tráfico. El acceso se restablecerá al finalizar el temporizador.',
-          totalInspections: 0,
-          history: [],
-          alertLevel: 'MEDIUM',
-          alertMessage: 'Intervalo de espera preventivo del portal MTC activo. Se restablecerá automáticamente en unos segundos.'
-        },
-        portalUrl: 'https://rec.mtc.gob.pe/Citv/ArConsultaCitv',
-        latencyMs: 1,
-        timestamp: new Date().toISOString()
-      };
+      return createCooldownResponse(formattedPlate, remainingSecs, 1);
     }
 
-    let page = null;
-    let capturedRecords = null;
-    let isNoRecords = false;
-    let rateLimitHit = false;
+    const defaultHeaders = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      'Accept': 'application/json, text/javascript, */*; q=0.01',
+      'Referer': 'https://rec.mtc.gob.pe/Citv/ArConsultaCitv',
+      'X-Requested-With': 'XMLHttpRequest'
+    };
+
+    let queryResult = null;
+    const MAX_ATTEMPTS = 4;
 
     try {
-      const browser = await this.getBrowser();
-      page = await browser.newPage();
-      await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
-      await page.setViewport({ width: 1280, height: 800 });
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        // 1. Obtener sesión fresca y captcha Base64
+        const rCaptcha = await httpRequest('https://rec.mtc.gob.pe/Citv/refrescarCaptcha', {
+          headers: defaultHeaders,
+          timeout: 8000
+        });
 
-      // Interceptar respuesta JSON oficial del backend del MTC
-      page.on('response', async (response) => {
-        const url = response.url();
-        if (url.includes('JrCITVConsultarFiltro')) {
-          if (response.status() === 429) {
-            rateLimitHit = true;
-            return;
-          }
-          try {
-            const json = await response.json();
-            if (json && json.orStatus === true && json.orResult && json.orResult[0]) {
-              capturedRecords = JSON.parse(json.orResult[0]);
-            } else if (json && json.orStatus === true && (!json.orResult || json.orResult.length === 0)) {
-              isNoRecords = true;
-              capturedRecords = [];
-            } else if (json && json.orCodigo === '-1') {
-              // Captcha inválido
-            } else {
-              isNoRecords = true;
-              capturedRecords = [];
-            }
-          } catch (e) {
-            // No fue JSON o falló parseo
-          }
+        // Detección de Rate Limit (HTTP 429) según Cloudflare Sentinel
+        if (rCaptcha.statusCode === 429) {
+          const retryAfter = parseInt(rCaptcha.headers['retry-after'] || '60', 10);
+          MtcCitvScraper.cooldownUntil = Date.now() + (retryAfter * 1000);
+          return createCooldownResponse(formattedPlate, retryAfter, Date.now() - startTime);
         }
-      });
 
-      // 1. Navegar al portal oficial del MTC
-      await page.goto('https://rec.mtc.gob.pe/Citv/ArConsultaCitv', {
-        waitUntil: 'domcontentloaded',
-        timeout: 15000
-      });
+        if (!rCaptcha.body) {
+          continue;
+        }
 
-      // 2. Esperar elemento captcha del DOM
-      await page.waitForSelector('#imgCaptcha', { timeout: 10000 });
+        let jsonCap = null;
+        try {
+          jsonCap = JSON.parse(rCaptcha.body);
+        } catch (e) {
+          continue;
+        }
 
-      // 3. Extraer captcha en base64 directamente de la imagen renderizada
-      const captchaSrc = await page.$eval('#imgCaptcha', el => el.src);
-      const base64Data = captchaSrc.includes(',') ? captchaSrc.split(',')[1].trim() : captchaSrc;
-      const captchaBuffer = Buffer.from(base64Data, 'base64');
+        if (!jsonCap || !jsonCap.orResult) {
+          continue;
+        }
 
-      // 4. Resolver código con la Red Neuronal (100% precisión al 1er intento)
-      const { text: captchaText } = await MtcNeuralSolver.solve(captchaBuffer);
+        // Extraer cookie de sesión ASP.NET_SessionId
+        const cookies = (rCaptcha.headers['set-cookie'] || []).map(c => c.split(';')[0]).join('; ');
+        const captchaBuffer = Buffer.from(jsonCap.orResult, 'base64');
 
-      if (!captchaText || captchaText.length !== 6) {
-        throw new Error(`Resolución de captcha no concluyente: "${captchaText}"`);
+        // 2. Resolver Captcha en memoria con solver híbrido (Neural + ddddocr)
+        const captchaText = await resolveCaptchaHybrid(captchaBuffer);
+        if (!captchaText || captchaText.length !== 6) {
+          continue;
+        }
+
+        // 3. Consultar endpoint oficial con bypass de Cloudflare 1015 (ruta /Citv/)
+        const queryUrl = `https://rec.mtc.gob.pe/Citv/JrCITVConsultarFiltro?pArrParametros=1|${encodeURIComponent(cleanPlate)}||${encodeURIComponent(captchaText)}`;
+        const rQuery = await httpRequest(queryUrl, {
+          headers: {
+            ...defaultHeaders,
+            'Cookie': cookies
+          },
+          timeout: 8000
+        });
+
+        if (rQuery.statusCode === 429) {
+          const retryAfter = parseInt(rQuery.headers['retry-after'] || '60', 10);
+          MtcCitvScraper.cooldownUntil = Date.now() + (retryAfter * 1000);
+          return createCooldownResponse(formattedPlate, retryAfter, Date.now() - startTime);
+        }
+
+        let parsedQuery = null;
+        try {
+          parsedQuery = JSON.parse(rQuery.body);
+        } catch (e) {
+          // Si hubo error de parseo (ej. respuesta no JSON inesperada), reintentar
+          continue;
+        }
+
+        if (parsedQuery && parsedQuery.orStatus === true) {
+          queryResult = parsedQuery;
+          break;
+        } else if (parsedQuery && parsedQuery.orCodigo === '-1') {
+          // Captcha o sesión rechazada por MTC (-1) -> reintentar con captcha fresco
+          continue;
+        }
       }
-
-      // 5. Rellenar formulario y disparar búsqueda
-      await page.type('#texFiltro', cleanPlate, { delay: 30 });
-      await page.type('#texCaptcha', captchaText, { delay: 30 });
-
-      // Pausa humana breve antes de pulsar buscar
-      await new Promise(r => setTimeout(r, 400));
-
-      const [response] = await Promise.all([
-        page.waitForResponse(r => r.url().includes('JrCITVConsultarFiltro'), { timeout: 12000 }).catch(() => null),
-        page.click('#btnBuscar')
-      ]);
-
-      // Esperar brevemente a que el interceptor procese el JSON
-      await new Promise(r => setTimeout(r, 600));
 
       const latencyMs = Date.now() - startTime;
 
-      if (rateLimitHit) {
-        MtcCitvScraper.cooldownUntil = Date.now() + 45000;
+      // Si no se obtuvo respuesta exitosa tras los reintentos
+      if (!queryResult || queryResult.orStatus !== true) {
         return {
           success: false,
-          source: 'MTC_CLOUDFLARE_RATE_LIMIT',
+          source: 'MTC_CITV_UNRESOLVED',
+          error: 'El servidor del MTC no devolvió los datos tras los reintentos.',
           data: {
             plate: formattedPlate,
             hasInspection: false,
-            status: 'COOLDOWN_SEGURIDAD',
-            statusLabel: 'Ventana de Regulación Activa en Portal MTC',
-            cooldownSeconds: 45,
+            status: 'NO_CONSEGUIDO',
+            statusLabel: 'No se pudo obtener la revisión en este intento',
+            cooldownSeconds: 0,
             latestCertificate: 'N/D',
             expirationDate: 'No determinado',
             issueDate: 'N/D',
-            issuingCenter: 'PORTAL MTC CITV (Enfriamiento)',
+            issuingCenter: 'PORTAL MTC CITV',
             centerAddress: 'https://rec.mtc.gob.pe/Citv/ArConsultaCitv',
             serviceType: 'PARTICULAR',
             scope: 'NINGUNO',
-            observations: 'El servidor oficial del MTC se encuentra en intervalo de regulación de tráfico. El acceso se restablecerá al finalizar el temporizador.',
+            observations: 'El servidor del MTC no devolvió los datos tras los reintentos. Puedes reintentar la auditoría.',
             totalInspections: 0,
             history: [],
+            records: [],
             alertLevel: 'MEDIUM',
-            alertMessage: 'Intervalo de espera preventivo del portal MTC activo. Se restablecerá automáticamente en unos segundos.'
+            alertMessage: 'No se consiguió extraer la revisión técnica en este intento.'
           },
           portalUrl: 'https://rec.mtc.gob.pe/Citv/ArConsultaCitv',
           latencyMs,
@@ -192,11 +284,21 @@ class MtcCitvScraper {
         };
       }
 
+      // Procesar registros devueltos por el servidor
+      let rawRecords = [];
+      if (queryResult.orResult && queryResult.orResult[0]) {
+        try {
+          rawRecords = JSON.parse(queryResult.orResult[0]);
+        } catch (e) {
+          rawRecords = [];
+        }
+      }
+
       // Caso A: Sin registros oficiales (Exento o vehículo nuevo)
-      if (isNoRecords || (capturedRecords && capturedRecords.length === 0)) {
+      if (!rawRecords || rawRecords.length === 0) {
         return {
           success: true,
-          source: 'MTC_CITV_STEALTH',
+          source: 'MTC_CITV',
           data: {
             plate: formattedPlate,
             hasInspection: false,
@@ -213,9 +315,11 @@ class MtcCitvScraper {
             observations: 'Sin registros de inspecciones técnicas en la base de datos nacional del MTC.',
             totalInspections: 0,
             history: [],
+            records: [],
             alertLevel: 'SAFE',
             alertMessage: 'El vehículo no registra inspecciones técnicas en el MTC (habitual en autos de menos de 3 años de antigüedad o nunca inspeccionados).'
           },
+          error: null,
           portalUrl: 'https://rec.mtc.gob.pe/Citv/ArConsultaCitv',
           latencyMs,
           timestamp: new Date().toISOString()
@@ -223,74 +327,49 @@ class MtcCitvScraper {
       }
 
       // Caso B: Se obtuvieron registros oficiales válidos
-      if (capturedRecords && capturedRecords.length > 0) {
-        const latest = capturedRecords[0];
-        const isInspectionValid = (latest.ESTADO || '').toUpperCase().includes('VIGENTE');
+      const history = rawRecords.map(r => ({
+        plate: r.PLACA || formattedPlate,
+        certificateNumber: r.NRO_CERTI || 'CITV-OFICIAL',
+        validFrom: r.REVISIONVIGENCIAINICIO || 'N/D',
+        validTo: r.REVISIONVIGENCIAFINAL || 'N/D',
+        result: r.RESULTADO || 'APROBADO',
+        status: (r.ESTADO || 'VIGENTE').trim().toUpperCase(),
+        company: (r.SRAZONSOCENTCER || '').replace(/&amp;/g, '&'),
+        address: r.DIRECCION || 'LIMA - PERÚ',
+        serviceType: r.TIPO_SERVICIO || 'PARTICULAR',
+        scope: r.TIPO_AMBITO || 'NACIONAL',
+        observations: r.OBSERVACION || 'Sin observaciones'
+      }));
 
-        const history = capturedRecords.map(r => ({
-          plate: r.PLACA || formattedPlate,
-          certificateNumber: r.NRO_CERTI || 'CITV-OFICIAL',
-          validFrom: r.REVISIONVIGENCIAINICIO || 'N/D',
-          validTo: r.REVISIONVIGENCIAFINAL || 'N/D',
-          result: r.RESULTADO || 'APROBADO',
-          status: r.ESTADO || 'VIGENTE',
-          company: (r.SRAZONSOCENTCER || '').replace(/&amp;/g, '&'),
-          address: r.DIRECCION || 'LIMA - PERÚ'
-        }));
+      const latest = history[0];
+      const isInspectionValid = (latest.status || '').includes('VIGENTE');
 
-        return {
-          success: true,
-          source: 'MTC_CITV_STEALTH',
-          data: {
-            plate: formattedPlate,
-            hasInspection: true,
-            status: isInspectionValid ? 'VIGENTE' : 'VENCIDO',
-            statusLabel: isInspectionValid ? 'Revisión Técnica Vigente' : 'Revisión Técnica Vencida',
-            cooldownSeconds: 0,
-            latestCertificate: latest.NRO_CERTI || 'CITV-OFICIAL',
-            expirationDate: latest.REVISIONVIGENCIAFINAL || 'Vigente en Sistema',
-            issueDate: latest.REVISIONVIGENCIAINICIO || 'Registrado',
-            issuingCenter: (latest.SRAZONSOCENTCER || 'CENTRO AUTORIZADO MTC').replace(/&amp;/g, '&'),
-            centerAddress: latest.DIRECCION || 'PLANTA REGISTRADA EN MTC',
-            serviceType: latest.TIPO_SERVICIO || 'PARTICULAR',
-            scope: latest.TIPO_AMBITO || 'NACIONAL',
-            observations: latest.OBSERVACION || 'Sin observaciones',
-            totalInspections: history.length,
-            history,
-            alertLevel: isInspectionValid ? 'SAFE' : 'HIGH',
-            alertMessage: isInspectionValid
-              ? `Revisión Técnica Vigente hasta el ${latest.REVISIONVIGENCIAFINAL}. Certificado por ${(latest.SRAZONSOCENTCER || 'Taller MTC').replace(/&amp;/g, '&')}.`
-              : `Alerta: Revisión Técnica Vencida el ${latest.REVISIONVIGENCIAFINAL}. El vehículo no puede circular legalmente.`
-          },
-          portalUrl: 'https://rec.mtc.gob.pe/Citv/ArConsultaCitv',
-          latencyMs,
-          timestamp: new Date().toISOString()
-        };
-      }
-
-      // Caso C: No conseguido en este intento
       return {
-        success: false,
-        source: 'MTC_CITV_UNRESOLVED',
+        success: true,
+        source: 'MTC_CITV',
         data: {
           plate: formattedPlate,
-          hasInspection: false,
-          status: 'NO_CONSEGUIDO',
-          statusLabel: 'No se pudo obtener la revisión en este intento',
+          hasInspection: true,
+          status: isInspectionValid ? 'VIGENTE' : 'VENCIDO',
+          statusLabel: isInspectionValid ? 'Revisión Técnica Vigente' : 'Revisión Técnica Vencida',
           cooldownSeconds: 0,
-          latestCertificate: 'N/D',
-          expirationDate: 'No determinado',
-          issueDate: 'N/D',
-          issuingCenter: 'PORTAL MTC CITV (Sin respuesta)',
-          centerAddress: 'https://rec.mtc.gob.pe/Citv/ArConsultaCitv',
-          serviceType: 'PARTICULAR',
-          scope: 'NINGUNO',
-          observations: 'El servidor del MTC no devolvió los datos en este intento. Puedes volver a consultar.',
-          totalInspections: 0,
-          history: [],
-          alertLevel: 'MEDIUM',
-          alertMessage: 'No se consiguió extraer la revisión técnica en este intento. Puedes volver a consultar.'
+          latestCertificate: latest.certificateNumber,
+          expirationDate: latest.validTo,
+          issueDate: latest.validFrom,
+          issuingCenter: latest.company || 'CENTRO AUTORIZADO MTC',
+          centerAddress: latest.address,
+          serviceType: latest.serviceType,
+          scope: latest.scope,
+          observations: latest.observations,
+          totalInspections: history.length,
+          history,
+          records: history,
+          alertLevel: isInspectionValid ? 'SAFE' : 'HIGH',
+          alertMessage: isInspectionValid
+            ? `Revisión Técnica Vigente hasta el ${latest.validTo}. Certificado por ${latest.company}.`
+            : `Alerta: Revisión Técnica Vencida el ${latest.validTo}. El vehículo no puede circular legalmente.`
         },
+        error: null,
         portalUrl: 'https://rec.mtc.gob.pe/Citv/ArConsultaCitv',
         latencyMs,
         timestamp: new Date().toISOString()
@@ -298,46 +377,7 @@ class MtcCitvScraper {
 
     } catch (err) {
       const latencyMs = Date.now() - startTime;
-
-      // Si el error coincide con timeout del waitForResponse o con un 429 previo detectado,
-      // activar cooldown preventivo de 45s para proteger la IP del bloqueo acumulativo
-      const isTimeoutOrRateLimit =
-        err.message.includes('Timeout') ||
-        err.message.includes('timeout') ||
-        err.message.includes('429') ||
-        err.message.includes('net::ERR') ||
-        rateLimitHit;
-
-      if (isTimeoutOrRateLimit || rateLimitHit) {
-        MtcCitvScraper.cooldownUntil = Date.now() + 45000;
-        const remainingSecs = 45;
-        return {
-          success: false,
-          source: 'MTC_CLOUDFLARE_RATE_LIMIT',
-          data: {
-            plate: formattedPlate,
-            hasInspection: false,
-            status: 'COOLDOWN_SEGURIDAD',
-            statusLabel: 'Ventana de Regulación Activa en Portal MTC',
-            cooldownSeconds: remainingSecs,
-            latestCertificate: 'N/D',
-            expirationDate: 'No determinado',
-            issueDate: 'N/D',
-            issuingCenter: 'PORTAL MTC CITV (Enfriamiento)',
-            centerAddress: 'https://rec.mtc.gob.pe/Citv/ArConsultaCitv',
-            serviceType: 'PARTICULAR',
-            scope: 'NINGUNO',
-            observations: 'El servidor oficial del MTC se encuentra en intervalo de regulación de tráfico. El acceso se restablecerá al finalizar el temporizador.',
-            totalInspections: 0,
-            history: [],
-            alertLevel: 'MEDIUM',
-            alertMessage: 'Intervalo de espera preventivo del portal MTC activo. Se restablecerá automáticamente en unos segundos.'
-          },
-          portalUrl: 'https://rec.mtc.gob.pe/Citv/ArConsultaCitv',
-          latencyMs,
-          timestamp: new Date().toISOString()
-        };
-      }
+      console.error('[MtcCitvScraper Error]', err);
 
       return {
         success: false,
@@ -359,6 +399,7 @@ class MtcCitvScraper {
           observations: `Detalle: ${err.message}`,
           totalInspections: 0,
           history: [],
+          records: [],
           alertLevel: 'MEDIUM',
           alertMessage: 'Hubo una dificultad al conectar con el servidor oficial del MTC.'
         },
@@ -366,10 +407,6 @@ class MtcCitvScraper {
         latencyMs,
         timestamp: new Date().toISOString()
       };
-    } finally {
-      if (page && !page.isClosed()) {
-        await page.close().catch(() => {});
-      }
     }
   }
 }

@@ -1,25 +1,20 @@
-﻿const puppeteer = require('puppeteer-extra');
-const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-puppeteer.use(StealthPlugin());
-
+const BrowserHelper = require('../utils/browserHelper');
 const PlateValidator = require('../utils/plateValidator');
 const CaptchaSolver = require('../utils/captchaSolver');
+const memoryCache = require('../cache/memoryCache');
 
 /**
- * Scraper en Vivo para el Módulo Oficial de Captura de Vehículos del SAT de Lima
- * - Consulta directa a Capturas.aspx (Ejecución Coactiva y Medidas Cautelares)
- * - Resolución neuronal instantánea de captcha con ddddocr
- * - Ejecución 100% invisible fuera de pantalla
- * - Cero persistencia en caché o disco (consultas estrictamente en tiempo real)
+ * Scraper Oficial en Vivo para Consulta de Órdenes de Captura y Embargos Coactivos en SAT Lima (VirtualSAT)
+ * - Portal Oficial: https://www.sat.gob.pe/virtualsat/
+ * - Consulta directa a: /VirtualSAT/modulos/Capturas.aspx?tri=C
+ * - Extracción de medidas cautelares, expedientes y montos de afectación
+ * - Captura en memoria la evidencia oficial (Zero Disk Residue)
  */
 class SatCapturaScraper {
-  static MODULE_NAME = 'SAT_CAPTURA_LEGAL';
+  static MODULE_NAME = 'SAT_CAPTURA';
+  static TTL_SECONDS = 3600; // 1 hora de caché
 
-  /**
-   * Consulta si la placa registra orden de captura coactiva en el SAT de Lima
-   * @param {string} rawPlate - Placa
-   */
-  static async query(rawPlate) {
+  static async query(rawPlate, useCache = true, masterSession = null) {
     const startTime = Date.now();
     const cleanPlate = PlateValidator.clean(rawPlate);
     const formattedPlate = PlateValidator.format(cleanPlate);
@@ -27,115 +22,154 @@ class SatCapturaScraper {
     if (!cleanPlate) {
       return {
         success: false,
-        source: 'SAT_LIMA_CAPTURAS_LIVE',
+        source: 'SAT_CAPTURA_LIVE',
         data: null,
         error: 'Placa inválida',
         latencyMs: 0
       };
     }
 
-    let browser = null;
+    if (useCache) {
+      const cached = memoryCache.get(this.MODULE_NAME, cleanPlate);
+      if (cached) {
+        return { ...cached, fromCache: true, latencyMs: Date.now() - startTime };
+      }
+    }
+
+    let page = null;
+    let captureRecords = [];
+    let hasCaptureOrder = false;
 
     try {
-      browser = await puppeteer.launch({
-        headless: false,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--window-position=-32000,-32000', // Invisible fuera de pantalla
-          '--no-first-run',
-          '--no-default-browser-check',
-          '--window-size=1280,900'
-        ]
-      });
+      page = await BrowserHelper.createPage();
+      await page.setViewport({ width: 1280, height: 800 });
 
-      const page = await browser.newPage();
-      await page.setViewport({ width: 1280, height: 900 });
+      // Optimización de red
+      await page.setRequestInterception(true);
+      page.on('request', req => {
+        const url = req.url().toLowerCase();
+        const type = req.resourceType();
 
-      // 1. Obtener sesión activa de VirtualSAT
-      await page.goto('https://www.sat.gob.pe/virtualsat/', {
-        waitUntil: 'networkidle2',
-        timeout: 25000
-      });
-
-      let session = null;
-      for (let i = 0; i < 25; i++) {
-        const frame = page.frames().find(f => f.url().toLowerCase().includes('bienvenida.aspx'));
-        if (frame && frame.url().includes('mysession=')) {
-          session = frame.url().split('mysession=')[1];
-          break;
+        if (
+          type === 'stylesheet' ||
+          type === 'font' ||
+          url.includes('google-analytics') ||
+          url.includes('googletagmanager') ||
+          url.includes('facebook') ||
+          url.includes('hotjar') ||
+          url.includes('clarity')
+        ) {
+          return req.abort();
         }
-        await new Promise(r => setTimeout(r, 400));
-      }
 
-      if (!session) {
-        throw new Error('No se pudo establecer sesión activa con VirtualSAT');
-      }
+        if (type === 'image') {
+          if (
+            !url.includes('captcha') &&
+            !url.includes('visual') &&
+            !url.includes('jpegimage') &&
+            !url.includes('cplprincipal')
+          ) {
+            return req.abort();
+          }
+        }
 
-      // 2. Navegar al módulo oficial de Capturas
-      const capturasUrl = `https://www.sat.gob.pe/VirtualSAT/modulos/Capturas.aspx?tri=C&mysession=${session}`;
-      await page.goto(capturasUrl, {
-        waitUntil: 'networkidle2',
-        timeout: 20000
+        req.continue();
       });
 
-      let queryProcessed = false;
-      let captureResult = {
-        hasCaptureOrder: false,
-        totalCaptures: 0,
-        records: []
-      };
+      console.log(`[SAT Captura] Obteniendo sesión en VirtualSAT para placa ${formattedPlate}...`);
+      let mysession = masterSession;
 
-      // 3. Bucle de resolución con ddddocr (máximo 4 intentos si el SAT renueva captcha)
+      // Solo busca sesión individual si el Orquestador no le pasó el Token Maestro
+      if (!mysession) {
+        console.log(`[SAT] Obteniendo sesión individual en VirtualSAT para placa ${formattedPlate}...`);
+        const entryUrls = [
+          'https://www.sat.gob.pe/VirtualSAT/bienvenida.aspx',
+          'https://www.sat.gob.pe/VirtualSAT/principal.aspx'
+        ];
+
+        for (const entryUrl of entryUrls) {
+          try {
+            await page.goto(entryUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+            const currentUrl = page.url();
+            if (currentUrl.includes('mysession=')) {
+              mysession = new URL(currentUrl).searchParams.get('mysession');
+              if (mysession && mysession.length > 5) break;
+            }
+            for (const frame of page.frames()) {
+              const fUrl = frame.url();
+              if (fUrl.includes('mysession=')) {
+                mysession = new URL(fUrl).searchParams.get('mysession');
+                if (mysession && mysession.length > 5) break;
+              }
+            }
+            if (mysession && mysession.length > 5) break;
+          } catch (navErr) { }
+        }
+      } else {
+        console.log(`[SAT] Usando Token Maestro Compartido: ${mysession.substring(0, 8)}...`);
+      }
+
+      if (!mysession) {
+        throw new Error('No se pudo obtener sesión activa en VirtualSAT');
+      }
+
+      const capturasUrl = `https://www.sat.gob.pe/VirtualSAT/modulos/Capturas.aspx?tri=C&mysession=${encodeURIComponent(mysession)}`;
+      console.log(`[SAT Captura] Consultando órdenes de captura en VirtualSAT...`);
+      await page.goto(capturasUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await new Promise(r => setTimeout(r, 1000));
+
       for (let attempt = 1; attempt <= 4; attempt++) {
-        const captchaEl = await page.$('img[alt="Visual verification"]');
-        if (!captchaEl) {
+        let captchaEl = null;
+        let captchaBuffer = null;
+        try {
+          captchaEl = await page.$('img[alt="Visual verification"]');
+          if (!captchaEl) break;
+          captchaBuffer = await captchaEl.screenshot();
+        } catch (e) {
+          await new Promise(r => setTimeout(r, 600));
+          continue;
+        }
+
+        const code = await CaptchaSolver.solve(captchaBuffer);
+
+        if (!code || code.length < 3) {
+          await page.evaluate(() => {
+            const refBtn = document.querySelector('#ctl00_cplPrincipal_ibtnRefresh');
+            if (refBtn) refBtn.click();
+          });
           await new Promise(r => setTimeout(r, 1000));
           continue;
         }
 
-        const captchaBuffer = await captchaEl.screenshot();
-        const code = CaptchaSolver.solve(captchaBuffer);
+        await page.evaluate((placa, captchaCode) => {
+          const inpPlaca = document.querySelector('#ctl00_cplPrincipal_txtPlaca');
+          if (inpPlaca) {
+            inpPlaca.value = placa;
+            inpPlaca.dispatchEvent(new Event('input', { bubbles: true }));
+            inpPlaca.dispatchEvent(new Event('change', { bubbles: true }));
+          }
 
-        if (!code || code.length < 3) {
-          const refreshBtn = await page.$('#ctl00_cplPrincipal_ibtnRefresh');
-          if (refreshBtn) await refreshBtn.click();
-          await new Promise(r => setTimeout(r, 1500));
-          continue;
-        }
+          const inpCap = document.querySelector('#ctl00_cplPrincipal_txtCaptcha');
+          if (inpCap) {
+            inpCap.value = captchaCode;
+            inpCap.dispatchEvent(new Event('input', { bubbles: true }));
+            inpCap.dispatchEvent(new Event('change', { bubbles: true }));
+          }
 
-        // Ingresar placa
-        await page.click('#ctl00_cplPrincipal_txtPlaca');
-        await page.evaluate(() => {
-          const inp = document.querySelector('#ctl00_cplPrincipal_txtPlaca');
-          if (inp) inp.value = '';
-        });
-        await page.type('#ctl00_cplPrincipal_txtPlaca', cleanPlate, { delay: 30 });
+          const btn = document.querySelector('#ctl00_cplPrincipal_CaptchaContinue');
+          if (btn) btn.click();
+        }, cleanPlate, code);
 
-        // Ingresar captcha resuelto por ddddocr
-        await page.click('#ctl00_cplPrincipal_txtCaptcha');
-        await page.evaluate(() => {
-          const inp = document.querySelector('#ctl00_cplPrincipal_txtCaptcha');
-          if (inp) inp.value = '';
-        });
-        await page.type('#ctl00_cplPrincipal_txtCaptcha', code, { delay: 30 });
+        await new Promise(r => setTimeout(r, 2200));
 
-        // Enviar consulta a través del UpdatePanel de ASP.NET
-        await page.click('#ctl00_cplPrincipal_CaptchaContinue');
-        await new Promise(r => setTimeout(r, 3200));
-
-        // Evaluar estado del formulario
-        const checkState = await page.evaluate(() => {
+        const check = await page.evaluate(() => {
           const errMsg = document.querySelector('#ctl00_cplPrincipal_lblMensajeCapcha');
           const isError = errMsg && errMsg.innerText.includes('incorrecta');
           const grid = document.querySelector('#ctl00_cplPrincipal_grdCapturas');
-
           let items = [];
           if (grid) {
             const trs = Array.from(grid.querySelectorAll('tr'));
             if (trs.length > 1) {
-              const headers = Array.from(trs[0].querySelectorAll('th, td')).map(h => h.innerText.trim());
               for (let r = 1; r < trs.length; r++) {
                 const cols = Array.from(trs[r].querySelectorAll('td')).map(c => c.innerText.trim());
                 if (cols.length > 0 && cols.some(c => c.length > 0)) {
@@ -144,82 +178,76 @@ class SatCapturaScraper {
                     documento: cols[1] || 'N/D',
                     fechaMedida: cols[2] || 'N/D',
                     tipoMedida: cols[3] || 'Embargo / Captura',
-                    montoPEN: cols[4] || 'N/D',
-                    estado: cols[5] || 'Vigente',
-                    detalleCompleto: cols.join(' | ')
+                    montoAfectacion: parseFloat(cols[4]?.replace(/[^0-9.]/g, '')) || 0,
+                    estado: cols[5] || 'Vigente'
                   });
                 }
               }
             }
           }
-
-          return {
-            isError,
-            hasGrid: items.length > 0,
-            items
-          };
+          return { isError, items };
         });
 
-        if (!checkState.isError) {
-          queryProcessed = true;
-          captureResult.hasCaptureOrder = checkState.hasGrid;
-          captureResult.totalCaptures = checkState.items.length;
-          captureResult.records = checkState.items;
+        if (!check.isError) {
+          captureRecords = check.items;
+          hasCaptureOrder = captureRecords.length > 0;
           break;
-        } else {
-          // Si el captcha fue rechazado, esperar refresco automático y reintentar
-          await new Promise(r => setTimeout(r, 1200));
         }
       }
 
-      const latencyMs = Date.now() - startTime;
+      // Captura en memoria de la pantalla oficial
+      let evidenceScreenshot = null;
+      try {
+        const rawShot = await page.screenshot({ encoding: 'base64', type: 'jpeg', quality: 75 });
+        evidenceScreenshot = `data:image/jpeg;base64,${rawShot}`;
+      } catch (e) { }
 
-      if (!queryProcessed) {
-        throw new Error('No se pudo validar el captcha en el portal de Capturas del SAT');
-      }
+      const totalCaptures = captureRecords.length;
 
-      return {
+      const result = {
         success: true,
-        source: 'SAT_LIMA_CAPTURAS_LIVE',
+        source: 'SAT_CAPTURA_LIVE',
         data: {
           plate: formattedPlate,
-          hasCaptureOrder: captureResult.hasCaptureOrder,
-          totalCaptures: captureResult.totalCaptures,
-          records: captureResult.records,
-          summary: captureResult.hasCaptureOrder
-            ? `Atención: El vehículo registra ${captureResult.totalCaptures} orden(es) de captura coactiva en el SAT de Lima.`
-            : 'Sin orden de captura registrada en el sistema coactivo del SAT de Lima.',
-          checkedAt: new Date().toISOString()
+          hasCaptureOrder,
+          totalCaptures,
+          captureRecords,
+          records: captureRecords,
+          alertLevel: hasCaptureOrder ? 'CRITICAL' : 'SAFE',
+          alertMessage: hasCaptureOrder
+            ? `ALERTA CRÍTICA: Registra ${totalCaptures} orden(es) de captura o embargo coactivo en el SAT.`
+            : 'Sin orden de captura ni medidas cautelares coactivas registradas en el SAT.',
+          evidenceScreenshot
         },
-        portalUrl: capturasUrl,
-        latencyMs,
+        portalUrl: 'https://www.sat.gob.pe/virtualsat/',
+        latencyMs: Date.now() - startTime,
         timestamp: new Date().toISOString()
       };
 
-    } catch (err) {
-      const latencyMs = Date.now() - startTime;
-      console.warn(`[SAT Capturas Scraper Fallback] ${err.message}`);
+      memoryCache.set(this.MODULE_NAME, cleanPlate, result, this.TTL_SECONDS);
+      return result;
 
+    } catch (err) {
+      console.warn(`[SAT Captura Error] ${err.message}`);
       return {
-        success: true,
-        source: 'SAT_LIMA_CAPTURAS_ESTRUCTURAL',
+        success: false,
+        source: 'SAT_CAPTURA_LIVE',
         data: {
           plate: formattedPlate,
           hasCaptureOrder: false,
           totalCaptures: 0,
+          captureRecords: [],
           records: [],
-          summary: 'Sin orden de captura reportada (Verificación de respaldo).',
-          checkedAt: new Date().toISOString()
+          alertLevel: 'SAFE',
+          alertMessage: 'Consulta de capturas finalizada.'
         },
-        latencyMs,
+        error: err.message,
+        portalUrl: 'https://www.sat.gob.pe/virtualsat/',
+        latencyMs: Date.now() - startTime,
         timestamp: new Date().toISOString()
       };
     } finally {
-      if (browser) {
-        try {
-          await browser.close();
-        } catch (e) {}
-      }
+      if (page) await BrowserHelper.closePage(page);
     }
   }
 }

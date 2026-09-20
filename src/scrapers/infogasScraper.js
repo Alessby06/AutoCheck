@@ -64,7 +64,7 @@ class InfogasScraper {
   static fetchFise(plate) {
     return new Promise((resolve) => {
       const agent = new https.Agent({ rejectUnauthorized: false });
-      https.get('https://fise.minem.gob.pe:23308/consulta-taller/pages/consultaTaller/inicio', { agent, timeout: 5000 }, (res) => {
+      const getReq = https.get('https://fise.minem.gob.pe:23308/consulta-taller/pages/consultaTaller/inicio', { agent, timeout: 2500 }, (res) => {
         const cookies = res.headers['set-cookie'] || [];
         const cookieHeader = cookies.map(c => c.split(';')[0]).join('; ');
         
@@ -87,7 +87,7 @@ class InfogasScraper {
             'Origin': 'https://fise.minem.gob.pe:23308'
           },
           agent,
-          timeout: 5000
+          timeout: 2500
         }, (postRes) => {
           let data = '';
           postRes.on('data', chunk => data += chunk);
@@ -109,7 +109,14 @@ class InfogasScraper {
         req.on('error', e => resolve({ success: false, error: e.message }));
         req.write(postData);
         req.end();
-      }).on('error', e => resolve({ success: false, error: e.message }));
+      });
+
+      getReq.on('timeout', () => {
+        getReq.destroy();
+        resolve({ success: false, error: 'Timeout FISE inicio' });
+      });
+
+      getReq.on('error', e => resolve({ success: false, error: e.message }));
     });
   }
 
@@ -150,11 +157,14 @@ class InfogasScraper {
     }
 
     try {
-      // Consultar en paralelo INFOGAS y FISE MINEM
-      const [infogasRes, fiseRes] = await Promise.all([
+      // Consultar en paralelo INFOGAS y FISE MINEM con manejo desacoplado
+      const [infogasSettled, fiseSettled] = await Promise.allSettled([
         this.fetchInfogas(cleanPlate),
         this.fetchFise(cleanPlate)
       ]);
+
+      const infogasRes = infogasSettled.status === 'fulfilled' ? infogasSettled.value : null;
+      const fiseRes = fiseSettled.status === 'fulfilled' ? fiseSettled.value : null;
 
       const latencyMs = Date.now() - startTime;
       const infogasPayload = infogasRes?.data;
@@ -217,6 +227,7 @@ class InfogasScraper {
           data: {
             plate: formattedPlate,
             hasGnv: true,
+            hasGasConversion: true,
             fuelType: d.TipoCombustible || 'GNV-C (Gas Natural Vehicular)',
             chipStatus: isEnabled ? 'HABILITADO' : 'BLOQUEADO',
             chipStatusLabel: isEnabled ? 'Chip Habilitado para Carga' : 'Chip Bloqueado (Sin Carga en Grifos)',
@@ -233,6 +244,7 @@ class InfogasScraper {
               paidPEN: fisePaidAmount,
               pendingDebtPEN: fisePendingDebt,
               overdueDebtPEN: fiseOverdueDebt,
+              hasOverdueDebt: fiseOverdueDebt > 0,
               recaudos: fiseRecaudos
             },
             summary: isChipBlocked
@@ -252,6 +264,7 @@ class InfogasScraper {
         data: {
           plate: formattedPlate,
           hasGnv: false,
+          hasGasConversion: false,
           fuelType: 'GASOLINA / DIESEL ORIGINAL',
           chipStatus: 'NO APLICA',
           chipStatusLabel: 'Sin Conversión a Gas (Original)',
@@ -268,6 +281,7 @@ class InfogasScraper {
             paidPEN: 0,
             pendingDebtPEN: 0,
             overdueDebtPEN: 0,
+            hasOverdueDebt: false,
             recaudos: []
           },
           summary: 'El vehículo no registra conversión a Gas Natural (GNV) ni chip de carga activo ante INFOGAS ni el programa FISE.'

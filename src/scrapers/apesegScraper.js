@@ -1,4 +1,5 @@
 const { connect } = require('puppeteer-real-browser');
+const BrowserHelper = require('../utils/browserHelper');
 const PlateValidator = require('../utils/plateValidator');
 const CaptchaSolver = require('../utils/captchaSolver');
 const path = require('path');
@@ -46,15 +47,17 @@ class ApesegScraper {
 
     let browserInstance = null;
     let browserPid = null;
+    let profileDir = null;
 
     try {
-      // 1. Preparar directorio seguro de perfil de Chrome para evitar errores EPERM en Windows
-      const profileDir = path.join(process.cwd(), '.chrome_soat_profile');
+      // 1. Directorio efímero y aislado por instancia para evitar colisiones ECONNREFUSED en Windows
+      const uniqueId = `${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      profileDir = path.join(process.cwd(), `.chrome_soat_${uniqueId}`);
       if (!fs.existsSync(profileDir)) {
         fs.mkdirSync(profileDir, { recursive: true });
       }
 
-      // 2. Lanzar navegador invisible fuera de pantalla con soporte de Turnstile
+      // 2. Lanzar navegador con soporte nativo de Cloudflare Turnstile
       const { browser, page } = await connect({
         headless: false,
         turnstile: true,
@@ -64,24 +67,25 @@ class ApesegScraper {
           '--disable-setuid-sandbox',
           '--disable-dev-shm-usage',
           '--window-position=-32000,-32000',
-          '--window-size=1280,900'
+          '--window-size=1280,900',
+          '--no-first-run',
+          '--no-default-browser-check'
         ]
       });
 
+      BrowserHelper.registerBrowser(browser);
       browserInstance = browser;
       browserPid = browser.process()?.pid;
 
-      let capturedApiCertificates = null;
       let isRateLimited = false;
       let isNoRecordFound = false;
 
-      // 3. Interceptar tráfico de red
+      // 3. Interceptar tráfico de red para optimizar login y evitar logout
       await page.setRequestInterception(true);
       page.on('request', req => {
         const url = req.url();
 
-        // Si tenemos un token de sesión válido en memoria, responder localmente al /login
-        // para NO quemar intentos de autenticación en Laravel
+        // Reutilizar token Bearer si aún está vigente en memoria
         if (url.includes('/consulta-soat/api/login') && ApesegScraper.sessionToken && Date.now() < ApesegScraper.sessionTokenExpiresAt) {
           req.respond({
             status: 200,
@@ -91,7 +95,7 @@ class ApesegScraper {
           return;
         }
 
-        // Bloquear llamada a /logout para que APESEG NO invalide el Bearer token en el backend
+        // Bloquear logout para mantener el token de sesión activo
         if (url.includes('/consulta-soat/api/logout')) {
           req.abort();
           return;
@@ -102,117 +106,56 @@ class ApesegScraper {
 
       page.on('response', async res => {
         const url = res.url();
-        const req = res.request();
-
-        // Detectar si el login real respondió 429 (Rate Limit de Laravel)
         if (url.includes('/consulta-soat/api/login') && res.status() === 429) {
           isRateLimited = true;
         }
-
-        // Capturar token de sesión si el login real fue exitoso
         if (url.includes('/consulta-soat/api/login') && res.status() === 200) {
           try {
             const data = await res.json();
             if (data && data.access_token) {
               ApesegScraper.sessionToken = data.access_token;
-              ApesegScraper.sessionTokenExpiresAt = Date.now() + 45 * 60 * 1000; // Válido por 45 min
+              ApesegScraper.sessionTokenExpiresAt = Date.now() + 45 * 60 * 1000;
             }
           } catch {}
-        }
-
-        // Interceptar respuesta de certificados
-        if (req.method() === 'GET' && url.includes('/certificados/placa/') && res.status() === 200) {
-          try {
-            const json = await res.json();
-            if (Array.isArray(json)) {
-              capturedApiCertificates = json;
-              if (json.length === 0) {
-                isNoRecordFound = true;
-              }
-            }
-          } catch {}
-        } else if (req.method() === 'GET' && url.includes('/certificados/placa/') && res.status() === 404) {
-          isNoRecordFound = true;
-          capturedApiCertificates = [];
         }
       });
 
-      // 4. Navegar directamente a la aplicación web oficial (ahorra 10s al evitar WordPress)
+      // 4. Navegar a la aplicación web oficial de APESEG
       await page.goto('https://webapp.apeseg.org.pe/consulta-soat/?source=apeseg', {
         waitUntil: 'domcontentloaded',
-        timeout: 40000
+        timeout: 35000
       });
 
-      // 5. Asegurar renderizado y emisión del token Turnstile
-      let turnstileToken = null;
-      for (let t = 0; t < 15; t++) {
-        turnstileToken = await page.evaluate(() => {
-          return document.querySelector('[name="cf-turnstile-response"]')?.value || null;
-        });
-        if (turnstileToken) break;
-
-        await page.evaluate(() => {
-          if (window.turnstile && !document.querySelector('#turnstile-container iframe')) {
-            window.turnstile.render('#turnstile-container', { sitekey: '0x4AAAAAADyJA_4hEDeVktbR' });
-          }
-        });
-        await new Promise(r => setTimeout(r, 600));
-      }
-
-      // 6. Bucle ágil de resolución de captcha y consulta directa mediante API Bridge
       let rawCertificates = null;
 
-      for (let attempt = 1; attempt <= 4; attempt++) {
+      // 5. Bucle de consulta directa de Certificados con gestión de Turnstile de uso único
+      for (let attempt = 1; attempt <= 3; attempt++) {
         if (isRateLimited) break;
 
-        // A. Obtener nuevo captcha desde el microservicio oficial
-        const captchaData = await page.evaluate(async () => {
-          try {
-            const res = await fetch('https://api.apeseg.org.pe/captcha-api/api/captcha', {
-              headers: { 'X-App-Secret': '9asjKZ9aJq1@2025' }
-            });
-            return await res.json();
-          } catch (e) {
-            return null;
-          }
-        });
+        // A. Obtener token Turnstile fresco
+        let currentTurnstile = null;
+        for (let t = 0; t < 25; t++) {
+          currentTurnstile = await page.evaluate(() => {
+            return document.querySelector('[name="cf-turnstile-response"]')?.value || null;
+          });
+          if (currentTurnstile && currentTurnstile.length > 20) break;
 
-        if (!captchaData || !captchaData.img || !captchaData.key) {
+          await page.evaluate(() => {
+            if (window.turnstile && !document.querySelector('#turnstile-container iframe')) {
+              try {
+                window.turnstile.render('#turnstile-container', { sitekey: '0x4AAAAAADyJA_4hEDeVktbR' });
+              } catch (e) {}
+            }
+          });
           await new Promise(r => setTimeout(r, 600));
+        }
+
+        if (!currentTurnstile) {
+          console.warn(`[ApesegScraper] Intento ${attempt}: No se obtuvo token Turnstile`);
           continue;
         }
 
-        const base64Data = captchaData.img.split('base64,')[1];
-        const captchaCode = CaptchaSolver.solve(Buffer.from(base64Data, 'base64'));
-
-        if (!captchaCode || captchaCode.length !== 6) {
-          await new Promise(r => setTimeout(r, 300));
-          continue;
-        }
-
-        // B. Validar captcha en el microservicio
-        const verifyRes = await page.evaluate(async (code, key) => {
-          try {
-            const res = await fetch('https://api.apeseg.org.pe/captcha-api/api/captcha/verify', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'X-App-Secret': '9asjKZ9aJq1@2025'
-              },
-              body: JSON.stringify({ captcha: code, key: key })
-            });
-            return await res.json();
-          } catch (e) {
-            return { valid: false };
-          }
-        }, captchaCode, captchaData.key);
-
-        if (!verifyRes || !verifyRes.valid) {
-          await new Promise(r => setTimeout(r, 300));
-          continue;
-        }
-
-        // C. Asegurar que tenemos Bearer token (desde pool o autenticando con credenciales oficiales)
+        // B. Asegurar token JWT Bearer
         let jwt = (ApesegScraper.sessionToken && Date.now() < ApesegScraper.sessionTokenExpiresAt)
           ? ApesegScraper.sessionToken
           : null;
@@ -243,56 +186,62 @@ class ApesegScraper {
           }
         }
 
-        if (!jwt) {
-          await new Promise(r => setTimeout(r, 500));
-          continue;
-        }
+        // C. Consulta directa de certificados vía API oficial (sin requerir OCR redundante)
+        if (jwt && currentTurnstile) {
+          const certsResult = await page.evaluate(async (token, cf, plate) => {
+            try {
+              const res = await fetch(`https://api.apeseg.org.pe/consulta-soat/api/certificados/placa/${plate}`, {
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'CF-Turnstile-Response': cf,
+                  'X-Source': 'apeseg',
+                  'X-Referrer': 'https://www.apeseg.org.pe/'
+                }
+              });
+              const text = await res.text();
+              let parsed = null;
+              try { parsed = JSON.parse(text); } catch(e) {}
+              return { status: res.status, rawText: text.substring(0, 150), data: parsed };
+            } catch (e) {
+              return { status: 500, error: e.message };
+            }
+          }, jwt, currentTurnstile, cleanPlate);
 
-        // D. Refrescar Turnstile token si ya está disponible en el DOM
-        turnstileToken = await page.evaluate(() => {
-          return document.querySelector('[name="cf-turnstile-response"]')?.value || null;
-        });
+          console.log(`[ApesegScraper] Intento ${attempt}: API Certificados HTTP ${certsResult.status} (Placa: ${cleanPlate}) ->`, certsResult.rawText);
 
-        // E. Consultar certificados directamente en la API con el token y CF-Turnstile
-        const certsResult = await page.evaluate(async (token, cf, plate) => {
-          try {
-            const res = await fetch(`https://api.apeseg.org.pe/consulta-soat/api/certificados/placa/${plate}`, {
-              headers: {
-                'Authorization': `Bearer ${token}`,
-                'CF-Turnstile-Response': cf || '',
-                'X-Source': 'apeseg',
-                'X-Referrer': 'https://www.apeseg.org.pe/'
+          if (certsResult.status === 200) {
+            rawCertificates = Array.isArray(certsResult.data) ? certsResult.data : [];
+            break;
+          } else if (certsResult.status === 404) {
+            rawCertificates = [];
+            isNoRecordFound = true;
+            break;
+          } else if (certsResult.status === 429) {
+            isRateLimited = true;
+            break;
+          } else if (certsResult.status === 401) {
+            ApesegScraper.sessionToken = null;
+            ApesegScraper.sessionTokenExpiresAt = 0;
+            await new Promise(r => setTimeout(r, 400));
+            continue;
+          } else if (certsResult.status === 403) {
+            // Token Turnstile quemado o inválido: resetear Turnstile en la página para generar uno nuevo
+            await page.evaluate(() => {
+              if (window.turnstile) {
+                try { window.turnstile.reset(); } catch (e) {}
               }
             });
-            const text = await res.text();
-            let parsed = null;
-            try { parsed = JSON.parse(text); } catch(e) {}
-            return { status: res.status, rawText: text.substring(0, 150), data: parsed };
-          } catch (e) {
-            return { status: 500, error: e.message };
+            await new Promise(r => setTimeout(r, 1200));
+            continue;
           }
-        }, jwt, turnstileToken, cleanPlate);
-
-        console.log(`[ApesegScraper] Intento ${attempt}: API Certificados HTTP ${certsResult.status} (Placa: ${cleanPlate}) ->`, certsResult.rawText);
-
-        if (certsResult.status === 200) {
-          rawCertificates = Array.isArray(certsResult.data) ? certsResult.data : [];
-          break;
-        } else if (certsResult.status === 404) {
-          rawCertificates = [];
-          isNoRecordFound = true;
-          break;
-        } else if (certsResult.status === 429) {
-          isRateLimited = true;
-          break;
-        } else if (certsResult.status === 401) {
-          // Token expirado o revocado, limpiar pool y reintentar
-          ApesegScraper.sessionToken = null;
-          ApesegScraper.sessionTokenExpiresAt = 0;
-          await new Promise(r => setTimeout(r, 400));
-          continue;
         }
       }
+
+      let apesegScreenshot = null;
+      try {
+        const rawShot = await page.screenshot({ encoding: 'base64', type: 'jpeg', quality: 75 });
+        apesegScreenshot = `data:image/jpeg;base64,${rawShot}`;
+      } catch (e) {}
 
       const latencyMs = Date.now() - startTime;
 
@@ -302,7 +251,7 @@ class ApesegScraper {
           success: true,
           source: 'APESEG_OFICIAL_LIVE',
           data: {
-            hasSoat: null, // null indica estado indeterminado/enfriamiento, NO que el auto carezca de SOAT
+            hasSoat: null,
             status: 'RATE_LIMIT_COOLDOWN',
             statusLabel: 'Servidor APESEG en Enfriamiento',
             isExpired: false,
@@ -318,7 +267,8 @@ class ApesegScraper {
             creationDate: null,
             summary: 'El servidor oficial de aseguradoras (APESEG) está regulando el tráfico por alta demanda momentánea. Esto NO significa que el auto no tenga seguro. Por favor reintente en 2 minutos.',
             totalPolicies: 0,
-            history: []
+            history: [],
+            evidenceScreenshot: apesegScreenshot
           },
           latencyMs
         };
@@ -345,7 +295,8 @@ class ApesegScraper {
             certificateType: 'N/D',
             creationDate: null,
             totalPolicies: 0,
-            history: []
+            history: [],
+            evidenceScreenshot: apesegScreenshot
           },
           latencyMs
         };
@@ -399,7 +350,8 @@ class ApesegScraper {
           brand: current.Marca || '',
           model: current.ModeloVehiculo || '',
           totalPolicies: rawCertificates.length,
-          history
+          history,
+          evidenceScreenshot: apesegScreenshot
         },
         latencyMs
       };
@@ -422,6 +374,11 @@ class ApesegScraper {
       if (browserPid) {
         try {
           execSync(`taskkill /F /T /PID ${browserPid} >nul 2>&1`, { stdio: 'ignore' });
+        } catch {}
+      }
+      if (profileDir && fs.existsSync(profileDir)) {
+        try {
+          fs.rmSync(profileDir, { recursive: true, force: true });
         } catch {}
       }
     }
