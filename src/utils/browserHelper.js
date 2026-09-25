@@ -16,6 +16,7 @@ class BrowserHelper {
    */
   static getSystemBrowserPath() {
     const candidates = [
+      '/run/current-system/sw/bin/chromium', // <-- RUTA NUEVA PARA REPLIT
       '/usr/bin/chromium',
       'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
       'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',

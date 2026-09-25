@@ -1,0 +1,6 @@
+run = "bash start.sh"
+
+[env]
+PUPPETEER_SKIP_CHROMIUM_DOWNLOAD = "true"
+PUPPETEER_EXECUTABLE_PATH = "/run/current-system/sw/bin/chromium"
+PORT = "3000"
