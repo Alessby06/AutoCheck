@@ -12,12 +12,15 @@ class BrowserHelper {
   static activePids = new Set();
 
   /**
-   * Busca los ejecutables estándar de Google Chrome o Microsoft Edge en Windows
+   * Busca los ejecutables estándar de Google Chrome o Microsoft Edge en Windows/Linux
    */
   static getSystemBrowserPath() {
     const candidates = [
-      '/run/current-system/sw/bin/chromium', // <-- RUTA NUEVA PARA REPLIT
       '/usr/bin/chromium',
+      '/usr/bin/chromium-browser',
+      '/usr/bin/google-chrome',
+      '/usr/bin/google-chrome-stable',
+      process.env.CHROME_PATH,
       'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
       'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
       'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
@@ -70,7 +73,7 @@ class BrowserHelper {
 
       const systemPath = this.getSystemBrowserPath();
       const launchOptions = {
-        headless: 'new', // MODO 100% INVISIBLE SILENCIOSO
+        headless: true, // MODO 100% INVISIBLE SILENCIOSO
         userDataDir: this.currentProfileDir,
         defaultViewport: null,
         args: [

@@ -3,6 +3,8 @@ const cors = require('cors');
 const path = require('path');
 const VehicleService = require('./src/services/vehicleService');
 const PlateValidator = require('./src/utils/plateValidator');
+const BrowserHelper = require('./src/utils/browserHelper');
+const CaptchaSolver = require('./src/utils/captchaSolver');
 
 const fs = require('fs');
 
@@ -132,6 +134,7 @@ async function gracefulShutdown(signal) {
   console.log(`\n[Server] Señal ${signal} recibida. Cerrando navegadores y liberando recursos...`);
   try {
     await BrowserHelper.cleanupAll();
+    await CaptchaSolver.close();
   } catch (e) {}
   process.exit(0);
 }

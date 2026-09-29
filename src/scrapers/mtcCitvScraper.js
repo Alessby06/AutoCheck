@@ -6,6 +6,14 @@ const PlateValidator = require('../utils/plateValidator');
 const MtcNeuralSolver = require('./mtcNeuralSolver');
 
 /**
+ * Resuelve el intérprete Python disponible (cascada: CAPTCHA_PYTHON → python3 → python)
+ */
+function resolvePython() {
+  if (process.env.CAPTCHA_PYTHON) return process.env.CAPTCHA_PYTHON;
+  return process.platform === 'win32' ? 'python' : 'python3';
+}
+
+/**
  * Resuelve el captcha alfanumérico del MTC utilizando ddddocr en Python como fallback
  * @param {Buffer} captchaBuffer
  * @returns {string|null}
@@ -16,10 +24,11 @@ function solveCaptchaDdddocr(captchaBuffer) {
 
   const timestamp = Date.now() + '_' + Math.random().toString(36).substring(2, 7);
   const tmpImg = path.join(tmpDir, `mtc_cap_${timestamp}.png`);
+  const python = resolvePython();
 
   try {
     fs.writeFileSync(tmpImg, captchaBuffer);
-    const cmd = `python -c "import ddddocr; ocr = ddddocr.DdddOcr(show_ad=False); print('RESULT:' + ocr.classification(open(r'${tmpImg}', 'rb').read()))"`;
+    const cmd = `"${python}" -c "import ddddocr; ocr = ddddocr.DdddOcr(show_ad=False); print('RESULT:' + ocr.classification(open(r'${tmpImg}', 'rb').read()))"`;
     const out = execSync(cmd, { timeout: 10000 }).toString();
     const match = out.match(/RESULT:(\w+)/);
     return match ? match[1].trim() : null;

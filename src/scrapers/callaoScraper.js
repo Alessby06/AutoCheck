@@ -5,6 +5,14 @@ const path = require('path');
 const { execSync } = require('child_process');
 
 /**
+ * Resuelve el intérprete Python disponible (cascada: CAPTCHA_PYTHON → python3 → python)
+ */
+function resolvePython() {
+  if (process.env.CAPTCHA_PYTHON) return process.env.CAPTCHA_PYTHON;
+  return process.platform === 'win32' ? 'python' : 'python3';
+}
+
+/**
  * Intenta resolver el captcha numerico de 3 dígitos de Callao
  * Estrategia dual: OpenCV+HSV (alto acierto en dígitos azules) → ddddocr directo (fallback)
  * @param {Buffer} rawBuffer
@@ -17,13 +25,14 @@ function solveCallaoCaptcha(rawBuffer) {
   const timestamp = Date.now() + '_' + Math.random().toString(36).substring(2, 7);
   const tmpImg = path.join(tmpDir, `callao_cap_${timestamp}.png`);
   const solverScript = path.join(__dirname, '..', 'utils', 'callaoSolver.py');
+  const python = resolvePython();
 
   try {
     fs.writeFileSync(tmpImg, rawBuffer);
 
     // Solver primario: OpenCV+HSV (aísla los dígitos azules con alta precisión)
     try {
-      const out = execSync(`python "${solverScript}" "${tmpImg}"`, { timeout: 10000 }).toString();
+      const out = execSync(`"${python}" "${solverScript}" "${tmpImg}"`, { timeout: 10000 }).toString();
       const match = out.match(/RESULT:(\d+)/);
       const result = match ? match[1].trim() : null;
       if (result && result.length === 3) {
@@ -35,7 +44,7 @@ function solveCallaoCaptcha(rawBuffer) {
 
     // Solver de respaldo: ddddocr directo sobre la imagen original
     const fallbackScript = `import sys, io, ddddocr; sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='ignore'); ocr = ddddocr.DdddOcr(show_ad=False); res = ocr.classification(open(r'${tmpImg.replace(/\\/g, '\\\\')}', 'rb').read()); digits = ''.join([c for c in res if c.isdigit()]); print('RESULT:' + digits)`;
-    const fallbackOut = execSync(`python -c "${fallbackScript}"`, { timeout: 10000 }).toString();
+    const fallbackOut = execSync(`"${python}" -c "${fallbackScript}"`, { timeout: 10000 }).toString();
     const fallbackMatch = fallbackOut.match(/RESULT:(\d+)/);
     const fallbackResult = fallbackMatch ? fallbackMatch[1].trim() : null;
     if (fallbackResult && fallbackResult.length === 3) {
